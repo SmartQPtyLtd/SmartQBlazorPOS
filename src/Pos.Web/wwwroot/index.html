@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartQ Blazor POS — Checkout</title>
+    <base href="/" />
+    <link rel="preload" id="webassembly" />
+
+    <!-- Design system first: neon-skeleton (a dark Tron-flavoured Skeleton fork) supplies the
+         :root design tokens (--background, --surface, --bezel, --neon, ...), the base font
+         stack, and its global element styles. Everything after it re-themes by reading those
+         tokens, so the whole app re-skins from the library's :root. -->
+    <link rel="stylesheet" href="css/neon-skeleton.css" />
+
+    <!-- Shell styles next, then the till. Bootstrap is deliberately absent: nothing here uses it,
+         and it is 8 MB of framework CSS that loses every specificity contest to pos.css anyway. -->
+    <link rel="stylesheet" href="css/app.css" />
+
+    <!-- Till styling is loaded last so it wins over the shell's defaults. Every rule in
+         these files is namespaced (.pos-*, .dev-*, .cd-*, .transfer-*), because they all load on
+         every page and the till and the customer display want opposite themes. -->
+    <link rel="stylesheet" href="css/pos.css" />
+    <link rel="stylesheet" href="css/customer-display.css" />
+    <link rel="stylesheet" href="css/devices.css" />
+    <link rel="stylesheet" href="css/transfers.css" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png" />
+    <link href="Pos.Web.styles.css" rel="stylesheet" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+    <script type="importmap"></script>
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+    <script>navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });</script>
+</body>
+
+</html>

@@ -1,0 +1,38 @@
+## Build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+## Publish output, written by tools/verify-offline.ps1
+.publish/
+
+## Local tool state (dotnet CLI home is redirected here because the sandbox
+## cannot write the user profile directory)
+.dotnet-home/
+
+## Runtime data — SQLite sync database, local logs
+*.db
+*.db-shm
+*.db-wal
+logs/
+data/
+
+## Secrets: never commit store enrollment keys or TLS material
+*.pfx
+*.key
+appsettings.*.local.json
+.env
+.env.*
+
+## Editor / OS
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
+
+## Local archives — full-repo zips are backups, not source
+POS.zip
+*.zip

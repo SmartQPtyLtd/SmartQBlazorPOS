@@ -1,0 +1,390 @@
+@page "/catalog"
+@using Pos.Infrastructure.Checkout
+@using Pos.Infrastructure.Storage
+@using Pos.Web.Terminal
+@inject CheckoutSession Session
+@inject StockService Stock
+@inject NavigationManager Nav
+@inject ILogger<Catalog> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Catalog — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Catalog and stock</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Catalog &amp; stock</strong>
+            <span class="pos-status__code">@Session.Store?.Name</span>
+        </div>
+        <div class="pos-status__indicators">
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    <section class="dev-card cat-toolbar">
+        <div class="pos-scan">
+            <input class="pos-scan__input"
+                   type="text"
+                   autocomplete="off"
+                   aria-label="Search the catalogue by name, barcode, or SKU"
+                   placeholder="Search by name, barcode, or SKU"
+                   @bind="_search"
+                   @bind:event="oninput" />
+
+            <button class="btn btn--primary" @onclick="LoadAsync" disabled="@_busy">
+                Search
+            </button>
+            <button class="btn" @onclick="() => SetIncludeInactiveAsync(!_includeInactive)" disabled="@_busy">
+                @(_includeInactive ? "Showing withdrawn" : "Hiding withdrawn")
+            </button>
+        </div>
+    </section>
+
+    @* The reorder list sits above the catalogue because it is the part of this screen with a decision
+       attached to it: everything below is reference, this is what to do next. *@
+    @if (_reorder.Count > 0)
+    {
+        <section class="dev-card" style="margin: 1rem;">
+            <h2>@_reorder.Count item(s) to reorder</h2>
+
+            <table class="pos-lines">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th class="num">In stock</th>
+                        <th class="num">Reorder at</th>
+                        <th class="num">To order</th>
+                        <th scope="col"><span class="pos-visually-hidden">Select the product</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _reorder)
+                    {
+                        var captured = item;
+
+                        <tr>
+                            <td>
+                                <span class="pos-lines__name">@item.Product.Name</span>
+                                <span class="pos-lines__note">@item.Product.Barcode</span>
+                            </td>
+                            <td class="num"><strong class="cat-out">@Quantity(item.Stock.Quantity)</strong></td>
+                            <td class="num">@Quantity(item.Product.ReorderLevel ?? 0m)</td>
+                            <td class="num">@Quantity(item.ReorderShortfall)</td>
+                            <td>
+                                <button class="btn btn--small" @onclick="() => SelectAsync(captured)">
+                                    Open
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <p class="dev-hint">
+                Derived from the movement ledger against each item's own reorder point, so this list
+                needs nothing to be maintained. An item that has never been counted is not shown here:
+                a level nobody has established is not an empty shelf.
+            </p>
+        </section>
+    }
+
+    @if (_items.Count == 0)
+    {
+        <div class="pos-empty" style="margin: 1rem;">
+            <p>No products match.</p>
+            <p class="pos-empty__hint">
+                A shop's catalogue arrives from head office. Locally recorded items appear here once
+                they have been added.
+            </p>
+        </div>
+    }
+    else
+    {
+        <section class="dev-card" style="margin: 1rem;">
+            <h2>@_items.Count product(s)</h2>
+
+            <table class="pos-lines">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th class="num">Price</th>
+                        <th class="num">In stock</th>
+                        <th>Evidence</th>
+                        <th scope="col"><span class="pos-visually-hidden">Select the product for editing</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _items)
+                    {
+                        var captured = item;
+
+                        <tr class="@(item.IsWithdrawn ? "ref-line--done" : null)">
+                            <td>
+                                <span class="pos-lines__name">@item.Product.Name</span>
+                                <span class="pos-lines__note">@item.Product.Barcode</span>
+                            </td>
+                            <td class="num">@Money(item.Product.UnitPrice)</td>
+                            <td class="num">
+                                @if (item.Stock.HasNoHistory)
+                                {
+                                    @* Distinguishing "no history" from "zero" matters: a product that
+                                       has never moved is not the same as one that has sold out. *@
+                                    <span class="cat-nohistory">not tracked</span>
+                                }
+                                else
+                                {
+                                    <strong class="@(item.Stock.IsOutOfStock ? "cat-out" : null)">
+                                        @Quantity(item.Stock.Quantity)
+                                    </strong>
+                                }
+                            </td>
+                            <td class="cat-evidence">
+                                @if (item.Stock.HasNoHistory)
+                                {
+                                    <span>&mdash;</span>
+                                }
+                                else
+                                {
+                                    @* The movement count is shown because a level derived from two
+                                       movements and one from two hundred look identical as a number. *@
+                                    <span>@item.Stock.MovementCount movement(s)</span>
+                                }
+                            </td>
+                            <td>
+                                <button class="btn btn--small" @onclick="() => SelectAsync(captured)">
+                                    Manage
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (_selected is { } selected)
+    {
+        <div class="dev-grid">
+            <section class="dev-card">
+                <h2>@selected.Product.Name</h2>
+
+                <div class="dev-form">
+                    <label for="name">Name</label>
+                    <input id="name" class="pos-scan__input dev-input" @bind="_editName" />
+
+                    <label for="price">Unit price</label>
+                    <input id="price" class="pos-scan__input dev-input" type="number" step="0.01" min="0"
+                           @bind="_editPrice" />
+
+                    <label for="sku">SKU</label>
+                    @* Separate from the barcode and not a substitute for it: a shop's own code survives
+                       a supplier changing the barcode, and it is the column a stock sheet is kept by. *@
+                    <input id="sku" class="pos-scan__input dev-input" @bind="_editSku"
+                           placeholder="Internal code, if you use one" />
+
+                    <label for="category">Category</label>
+                    <input id="category" class="pos-scan__input dev-input" @bind="_editCategory"
+                           placeholder="e.g. Beverages" />
+
+                    <label for="active">Sold in this shop</label>
+                    <input id="active" type="checkbox" @bind="_editActive" />
+
+                    <label for="tracksStock">Count this item's stock</label>
+                    <input id="tracksStock" type="checkbox" @bind="_editTracksStock" />
+
+                    <label for="reorderLevel">Reorder at</label>
+                    @* Blank means nobody has decided, which is deliberately different from nought: a
+                       reorder point of zero would put every new article on the list the day it sold out. *@
+                    <input id="reorderLevel" class="pos-scan__input dev-input" type="number"
+                           step="0.001" min="0" @bind="_editReorderLevel"
+                           placeholder="Leave blank for no reorder point" />
+
+                    <label for="station">Prepared at</label>
+                    @* Blank means the product is handed over at the till and produces no
+                       preparation ticket, which is what most of a shop's catalogue is. *@
+                    <select id="station" class="pos-scan__input dev-input" @bind="_editStation">
+                        <option value="">Nothing to prepare — handed over at the till</option>
+                        @foreach (var station in Stations)
+                        {
+                            <option value="@station.Id">@station.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <p class="dev-hint">
+                    A product assigned to a station is sent to that station's printer as a ticket
+                    when it is sold. A shop with no kitchen printer leaves this blank and prints no
+                    tickets at all.
+                </p>
+
+                <p class="dev-hint">
+                    <strong>Reorder at</strong> is the level at which this item appears on the
+                    reorder list. Stock levels come from the movement ledger rather than a counter,
+                    so the figure moves as soon as a sale or a delivery is recorded.
+                </p>
+
+                <div class="dev-actions">
+                    <button class="btn btn--primary" @onclick="SaveProductAsync" disabled="@_busy">
+                        Save changes
+                    </button>
+                    <button class="btn btn--ghost" @onclick="CancelEdit" disabled="@_busy">
+                        Cancel
+                    </button>
+                </div>
+
+                <p class="dev-hint">
+                    A change here is a local decision. Head office owns the catalogue, so a later
+                    catalogue update replaces these details rather than merging with them.
+                </p>
+            </section>
+
+            <section class="dev-card">
+                <h2>Shelf label</h2>
+
+                <p class="dev-hint">
+                    Prints a shelf-edge label on the label printer, at the size configured in
+                    device settings (@_labelStockDescription).
+                </p>
+
+                <div class="dev-form">
+                    <label for="labelCopies">How many labels</label>
+                    <input id="labelCopies" class="pos-scan__input dev-input" type="number"
+                           min="1" max="100" @bind="_labelCopies" />
+                </div>
+
+                <div class="dev-actions">
+                    <button class="btn btn--primary" @onclick="PrintShelfLabelAsync" disabled="@_busy">
+                        Print shelf label
+                    </button>
+                </div>
+
+                @if (!CanPrintLabels)
+                {
+                    @* Said plainly rather than hiding the button: a shop without a label printer
+                       is an ordinary shop, and an operator who cannot find the button would
+                       reasonably conclude the feature is missing. *@
+                    <p class="dev-hint">
+                        No label printer is paired with this terminal yet. Pair one in
+                        <a href="devices">device settings</a>.
+                    </p>
+                }
+            </section>
+
+            <section class="dev-card">
+                <h2>Stock movements</h2>
+
+                <p class="dev-hint">
+                    The ledger behind the level. Corrections are appended, never written over, so the
+                    history still explains the current figure.
+                </p>
+
+                <div class="dev-form">
+                    <label for="kind">Movement</label>
+                    <select id="kind" class="pos-scan__input dev-input" @bind="_movementKind">
+                        <option value="count">Physical count (set the level)</option>
+                        <option value="receipt">Goods received</option>
+                        <option value="writeoff">Write-off</option>
+                    </select>
+
+                    <label for="qty">
+                        @(_movementKind == "count" ? "Counted quantity" : "Quantity")
+                    </label>
+                    <input id="qty" class="pos-scan__input dev-input" type="number" step="0.001" min="0"
+                           @bind="_movementQuantity" />
+
+                    <label for="reason">Reason / reference</label>
+                    <input id="reason" class="pos-scan__input dev-input" @bind="_movementReason"
+                           placeholder="@ReasonPlaceholder" />
+                </div>
+
+                <div class="dev-actions">
+                    <button class="btn btn--primary" @onclick="RecordMovementAsync" disabled="@_busy">
+                        Record movement
+                    </button>
+                </div>
+
+                @if (_history.Count > 0)
+                {
+                    <table class="pos-lines cat-history">
+                        <thead>
+                            <tr>
+                                <th>When</th>
+                                <th>Reason</th>
+                                <th class="num">Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var movement in _history)
+                            {
+                                <tr>
+                                    <td>@When(movement.OccurredAt)</td>
+                                    <td>
+                                        <span>@movement.Reason</span>
+                                        @if (!string.IsNullOrWhiteSpace(movement.Reference))
+                                        {
+                                            <span class="pos-lines__note">@movement.Reference</span>
+                                        }
+                                    </td>
+                                    <td class="num @(movement.QtyDelta < 0m ? "cat-out" : "cat-in")">
+                                        @(movement.QtyDelta > 0m ? "+" : string.Empty)@Quantity(movement.QtyDelta)
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="dev-hint">No stock has moved for this product yet.</p>
+                }
+            </section>
+        </div>
+    }
+
+    @* ------------------------------------------------------------- import / export *@
+    <section class="dev-card" style="margin: 1rem;">
+        <h2>Import and export</h2>
+
+        <p class="dev-hint">
+            The exported file opens in a spreadsheet: a column per field, with the barcode, name and
+            price columns required on the way back in. Anything else — a supplier column, a notes
+            column — is ignored, so a shop's own price list can be edited and imported as it stands.
+            Rows are matched on barcode, so re-importing an exported file updates the articles it
+            names rather than creating a second copy of each.
+        </p>
+
+        <div class="dev-actions">
+            <a class="btn" href="@ExportDataUri" download="@ExportFileName">
+                Export CSV
+            </a>
+
+            @* Labelled, because a bare file input is announced as "choose file" with no idea which
+               file, on a screen that already has several controls. *@
+            <InputFile OnChange="ImportAsync"
+                       accept=".csv,text/csv"
+                       aria-label="Import a catalogue CSV file over this terminal's catalogue" />
+
+            <button class="btn btn--ghost" @onclick="ReloadReorderAsync" disabled="@_busy">
+                Refresh
+            </button>
+        </div>
+
+        @if (_importSummary is { } summary)
+        {
+            <p class="dev-hint">@summary</p>
+        }
+
+        <p class="dev-hint">
+            An import changes this terminal's catalogue. Head office owns the published list, so use
+            this for what the shop maintains itself — a price list, a one-off range — and publish
+            through head office for anything the whole estate should see.
+        </p>
+    </section>
+</div>

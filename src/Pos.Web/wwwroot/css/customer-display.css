@@ -1,0 +1,153 @@
+/* customer-display.css — the customer-facing second screen.
+ *
+ * Read from about a metre away by someone who is not looking for detail, so the type is
+ * large and the contrast is high. The running total is always on screen: it is the single
+ * thing a customer checks, and hiding it until the end is what makes people distrust a till.
+ *
+ * All custom properties are namespaced with --cd- and every rule is scoped under .cd-shell.
+ * Both stylesheets load on every page, so an unscoped rule here would leak into the till.
+ *
+ * The tokens are aliases of the neon-skeleton :root tokens, so the display re-themes with the
+ * library: the same dark monolith surfaces as the till, with the neon green reserved for the
+ * paid total — the one number the customer is looking for.
+ */
+
+.cd-shell {
+    --cd-bg: var(--background);
+    --cd-text: var(--text);
+    --cd-muted: var(--text-muted);
+    --cd-rule: var(--bezel);
+    --cd-accent: var(--tertiary);
+
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--cd-bg);
+    color: var(--cd-text);
+    font-family: var(--font-base);
+}
+
+/* neon-skeleton's global table chrome (dark surface fill, bezel border, row hover paint) is
+   written for data tables in documents; this screen styles its own rows and cells, so the
+   element-level rules are switched off inside the display. */
+.cd-shell table {
+    background: transparent;
+    border: none;
+    margin-bottom: 0;
+}
+
+.cd-shell tbody tr:hover {
+    background: transparent;
+}
+
+.cd-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-bottom: 2px solid var(--cd-rule);
+}
+
+.cd-header h1 {
+    font-size: 1.75rem;
+    margin: 0;
+    letter-spacing: 0.02em;
+}
+
+.cd-connection {
+    font-size: 0.85rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--cd-rule);
+    color: var(--cd-muted);
+}
+
+.cd-connection--ok {
+    border-color: var(--cd-accent);
+    color: var(--cd-accent);
+}
+
+.cd-connection--stale {
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+/* ------------------------------------------------------------------------ welcome */
+
+.cd-welcome,
+.cd-thanks {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    text-align: center;
+    padding: 2rem;
+}
+
+.cd-welcome__message,
+.cd-thanks__message {
+    font-size: 3rem;
+    font-weight: 700;
+}
+
+.cd-welcome__hint {
+    font-size: 1.5rem;
+    color: var(--cd-muted);
+}
+
+.cd-thanks__total {
+    font-size: 4rem;
+    font-weight: 800;
+    color: var(--cd-accent);
+    font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------------- lines */
+
+.cd-lines {
+    width: 100%;
+    border-collapse: collapse;
+    flex: 1;
+}
+
+.cd-lines th {
+    text-align: left;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--cd-muted);
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--cd-rule);
+}
+
+.cd-lines td {
+    padding: 0.85rem 1.5rem;
+    font-size: 1.6rem;
+    border-bottom: 1px solid var(--cd-rule);
+}
+
+.cd-lines .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------------- total */
+
+.cd-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 1.5rem;
+    border-top: 4px solid var(--cd-text);
+    font-size: 2rem;
+}
+
+.cd-total strong {
+    font-size: 3.5rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}

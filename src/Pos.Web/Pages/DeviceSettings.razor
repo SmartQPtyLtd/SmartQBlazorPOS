@@ -1,0 +1,405 @@
+@page "/devices"
+@using System.Globalization
+@using Pos.Core.Domain
+@using Pos.Devices.EscPos
+@using Pos.Devices.Zpl
+@using Pos.Devices.Transport
+@using Pos.Infrastructure.Storage
+@using Pos.Infrastructure.Sync
+@using Pos.Web.Terminal
+@inject TerminalIdentity Identity
+@inject TerminalPrinterProvider Printers
+@inject PrinterResolver Resolver
+@inject CustomerDisplayPublisher Display
+@inject CheckoutSession Session
+@inject ILocalStore LocalStore
+@inject SyncClient Sync
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject ILogger<DeviceSettings> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Devices — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Device settings</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Device settings</strong>
+            <span class="pos-status__code">@Identity.TerminalId[..Math.Min(8, Identity.TerminalId.Length)]</span>
+        </div>
+        <div class="pos-status__indicators">
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    <div class="dev-grid">
+
+        @* ------------------------------------------------------------- printer *@
+        <section class="dev-card">
+            <h2>Receipt printer</h2>
+
+            <dl class="dev-facts">
+                <dt>Transport</dt>
+                <dd>@(Printers.Current?.Transport.DisplayName ?? "not resolved")</dd>
+
+                <dt>Status</dt>
+                <dd>
+                    <span class="badge @(IsPrinterReady ? "badge--ok" : "badge--warn")">
+                        @(Printers.Current?.Transport.State.Status.ToString() ?? "unknown")
+                    </span>
+                </dd>
+
+                <dt>Can cut paper</dt>
+                <dd>@YesNo(Printers.Current?.Transport.Capabilities.CanCut)</dd>
+
+                <dt>Can open drawer</dt>
+                <dd>@YesNo(Printers.Current?.Transport.Capabilities.CanOpenDrawer)</dd>
+
+                <dt>Paper width</dt>
+                <dd>@(Printers.Current?.Transport.Capabilities.Columns.ToString() ?? "-") columns</dd>
+            </dl>
+
+            @if (Printers.Current?.Transport.State.Detail is { } detail)
+            {
+                <p class="dev-detail">@detail</p>
+            }
+
+            @if (!IsPrinterReady)
+            {
+                <p class="dev-warn">
+                    Cash sales will still be recorded and queued, but no receipt will print and
+                    the cash drawer cannot be opened from the till.
+                </p>
+            }
+
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="PairPrinterAsync" disabled="@_busy">
+                    Pair a WebUSB printer
+                </button>
+                <button class="btn" @onclick="PairSerialAsync" disabled="@_busy">
+                    Pair a serial printer
+                </button>
+                <button class="btn" @onclick="ReconnectAsync" disabled="@_busy">
+                    Reconnect
+                </button>
+                <button class="btn btn--ghost" @onclick="TryPrintTestAsync" disabled="@_busy">
+                    Print a test receipt
+                </button>
+            </div>
+
+            <p class="dev-hint">
+                Pairing needs a Chromium-based browser on an HTTPS origin, and the chooser must be
+                opened by a click. Once paired, the terminal reattaches by itself after a refresh.
+            </p>
+        </section>
+
+        @* ------------------------------------------------------- kitchen printer *@
+        <section class="dev-card">
+            <h2>Kitchen &amp; bar printer</h2>
+
+            <dl class="dev-facts">
+                <dt>Paired device</dt>
+                <dd>@KitchenPrinterStatus</dd>
+
+                <dt>State</dt>
+                <dd>
+                    @if (IsKitchenPrinterReady)
+                    {
+                        <span class="badge badge--ok">ready</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge--warn">no tickets will be sent</span>
+                    }
+                </dd>
+
+                <dt>Stations</dt>
+                <dd>
+                    @if (Session.Store?.Stations.Count > 0)
+                    {
+                        @string.Join(", ", Session.Store.Stations.Select(s => s.Name))
+                    }
+                    else
+                    {
+                        <span>none — this store prepares nothing</span>
+                    }
+                </dd>
+            </dl>
+
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="PairKitchenPrinterAsync" disabled="@_busy">
+                    Pair the kitchen printer
+                </button>
+                <button class="btn" @onclick="RefreshKitchenPrinterAsync" disabled="@_busy">
+                    Check connection
+                </button>
+                <button class="btn btn--ghost" @onclick="UnpairKitchenPrinterAsync" disabled="@_busy">
+                    Unpair
+                </button>
+            </div>
+
+            <p class="dev-hint">
+                A separate printer from the receipt one, paired to a specific device so the two can
+                never take each other's. Products assigned a station on the catalogue screen are
+                sent here as tickets when they are sold.
+            </p>
+
+            @* Stated because it is a deliberate limitation rather than an oversight. *@
+            <p class="dev-hint">
+                There is no fallback for this printer. A receipt always prints — through the browser
+                dialog if nothing else, because a sale the customer cannot prove is not a completed
+                sale. A kitchen ticket is different: printing it through the browser dialog would
+                open a window on the till screen in the middle of a sale, which is worse than not
+                printing it at all.
+            </p>
+        </section>
+
+        @* --------------------------------------------------------- label printer *@
+        <section class="dev-card">
+            <h2>Label printer</h2>
+
+            <dl class="dev-facts">
+                <dt>Paired device</dt>
+                <dd>@LabelPrinterStatus</dd>
+
+                <dt>State</dt>
+                <dd>
+                    @if (IsLabelPrinterReady)
+                    {
+                        <span class="badge badge--ok">ready</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge--warn">no labels will be printed</span>
+                    }
+                </dd>
+            </dl>
+
+            <div class="dev-form">
+                <label for="labelWidth">Label width (mm)</label>
+                <input id="labelWidth" class="pos-scan__input dev-input" type="number"
+                       step="0.5" min="20" max="200" @bind="_labelWidthMm" />
+
+                <label for="labelHeight">Label height (mm)</label>
+                <input id="labelHeight" class="pos-scan__input dev-input" type="number"
+                       step="0.5" min="10" max="300" @bind="_labelHeightMm" />
+
+                <label for="labelDpi">Print head resolution</label>
+                <select id="labelDpi" class="pos-scan__input dev-input" @bind="_labelDpi">
+                    @foreach (var dpi in LabelStock.SupportedResolutions)
+                    {
+                        <option value="@dpi">@dpi dpi</option>
+                    }
+                </select>
+            </div>
+
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="PairLabelPrinterAsync" disabled="@_busy">
+                    Pair the label printer
+                </button>
+                <button class="btn" @onclick="SaveLabelStockAsync" disabled="@_busy">
+                    Save label size
+                </button>
+                <button class="btn" @onclick="PrintTestLabelAsync" disabled="@_busy">
+                    Print a test label
+                </button>
+                <button class="btn btn--ghost" @onclick="UnpairLabelPrinterAsync" disabled="@_busy">
+                    Unpair
+                </button>
+            </div>
+
+            <p class="dev-hint">
+                A Zebra-compatible printer speaking ZPL, which is a completely different command
+                language from the receipt printer. The size must match the roll loaded: a label that
+                is 2&nbsp;mm out does not fit the product it was printed for, and the printer does
+                not warn — it simply prints a label that is wrong.
+            </p>
+        </section>
+
+        @* ------------------------------------------------------ customer display *@
+        <section class="dev-card">
+            <h2>Customer display</h2>
+
+            <dl class="dev-facts">
+                <dt>Channel</dt>
+                <dd>
+                    @if (_displayChannel is null)
+                    {
+                        <span class="badge">checking…</span>
+                    }
+                    else if (_displayChannel.Value)
+                    {
+                        <span class="badge badge--ok">available</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge--warn">not available in this browser</span>
+                    }
+                </dd>
+
+                <dt>Window</dt>
+                <dd><a href="display" target="_blank" rel="noopener">open the customer display</a></dd>
+            </dl>
+
+            <p class="dev-hint">
+                The second screen is a separate window on this origin, fed over a same-origin channel
+                rather than the network, so it keeps working when the shop's internet is down. Open it
+                on the screen the customer can see and leave it there.
+            </p>
+
+            @if (_displayChannel == false)
+            {
+                <p class="dev-hint dev-hint--warn">
+                    This browser has no channel to send the basket over, so the display window will
+                    render but never update. The till itself is unaffected — the display is an output
+                    only and a sale never depends on it.
+                </p>
+            }
+        </section>
+
+        @* ---------------------------------------------------------------- sync *@
+        <section class="dev-card">
+            <h2>Head office sync</h2>
+
+            <dl class="dev-facts">
+                <dt>Enrolled</dt>
+                <dd>
+                    <span class="badge @(Identity.IsEnrolled ? "badge--ok" : "badge--warn")">
+                        @(Identity.IsEnrolled ? "yes" : "no")
+                    </span>
+                </dd>
+
+                <dt>Hub</dt>
+                <dd>@(Identity.HubAddress ?? "not configured")</dd>
+
+                <dt>Store</dt>
+                <dd>@(Identity.StoreId ?? "not configured")</dd>
+
+                @* The credential's own lifetime, which is otherwise invisible: the screen can say a
+                   rotation is overdue and nothing has happened about it, which is what a tilt whose
+                   hub is unreachable looks like. *@
+                <dt>Credential rotates</dt>
+                <dd>
+                    @if (Identity.RotateAfter is not { } rotates)
+                    {
+                        <span>not enrolled</span>
+                    }
+                    else if (Identity.PendingRotation is not null)
+                    {
+                        <span class="badge badge--warn">rotation due &mdash; waiting for the hub</span>
+                    }
+                    else if (Identity.RotationDue(DateTimeOffset.UtcNow))
+                    {
+                        <span class="badge badge--warn">due now &mdash; on the next sync</span>
+                    }
+                    else
+                    {
+                        <span>@rotates.ToLocalTime().ToString("d MMM yyyy", CultureInfo.InvariantCulture)</span>
+                    }
+                </dd>
+
+                <dt>Queued records</dt>
+                <dd>@_pending records</dd>
+
+                <dt>Local storage</dt>
+                <dd>@(_persisted ? "durable" : "may be evicted by the browser")</dd>
+            </dl>
+
+            @if (!Identity.IsEnrolled)
+            {
+                <p class="dev-warn">
+                    While unenrolled, sales are recorded locally and queued. Nothing is lost, but
+                    head office cannot see this store's trading.
+                </p>
+            }
+
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="SyncNowAsync" disabled="@_busy">
+                    Sync now
+                </button>
+                <button class="btn btn--ghost" @onclick="WipeAsync" disabled="@_busy">
+                    Erase local data
+                </button>
+            </div>
+        </section>
+
+        @* ------------------------------------------------------------ enrolment *@
+        <section class="dev-card">
+            <h2>Enrol this terminal</h2>
+
+            <p class="dev-hint">
+                Head office issues a one-time enrolment code for the store. The code is valid for
+                24 hours and can only be used once.
+            </p>
+
+            <p class="dev-hint dev-hint--warn">
+                Enrolling moves this terminal onto the store's own books. Anything already recorded
+                here — sales, stock, staff, and anything still waiting to sync — is erased, because
+                it belongs to no store the hub knows, and posting it would credit one shop's takings
+                to another. The terminal reloads itself when this happens.
+            </p>
+
+            <div class="dev-form">
+                <label for="hub">Hub address</label>
+                <input id="hub" class="pos-scan__input dev-input" @bind="_hubAddress"
+                       placeholder="https://pos.example.com" />
+
+                <label for="code">Enrolment code</label>
+                <input id="code" class="pos-scan__input dev-input" @bind="_enrollmentCode"
+                       placeholder="ABCD2345EFGH" />
+
+                <label for="label">Terminal name</label>
+                <input id="label" class="pos-scan__input dev-input" @bind="_terminalLabel"
+                       placeholder="Front counter" />
+            </div>
+
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="EnrollAsync" disabled="@_busy">
+                    Enrol
+                </button>
+            </div>
+        </section>
+
+        @* ------------------------------------------------------ browser support *@
+        <section class="dev-card">
+            <h2>This browser</h2>
+
+            <dl class="dev-facts">
+                <dt>WebUSB</dt>
+                <dd>@YesNo(_capabilities?.WebUsb)</dd>
+                <dt>Web Serial</dt>
+                <dd>@YesNo(_capabilities?.WebSerial)</dd>
+                <dt>WebHID</dt>
+                <dd>@YesNo(_capabilities?.WebHid)</dd>
+                <dt>Bluetooth</dt>
+                <dd>@YesNo(_capabilities?.Bluetooth)</dd>
+                <dt>Secure context</dt>
+                <dd>@YesNo(_capabilities?.SecureContext)</dd>
+            </dl>
+
+            @if (_capabilities is { SecureContext: false })
+            {
+                <p class="dev-warn">
+                    Device APIs need a secure context. Serve the till over HTTPS, or use
+                    localhost for development.
+                </p>
+            }
+
+            @if (_capabilities is { WebUsb: false })
+            {
+                <p class="dev-hint">
+                    WebUSB is not available here, which is expected in Firefox and Safari. The
+                    terminal will use another transport.
+                </p>
+            }
+        </section>
+    </div>
+</div>

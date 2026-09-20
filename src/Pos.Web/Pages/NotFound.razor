@@ -1,0 +1,16 @@
+@page "/not-found"
+
+@*
+    Shown for an unrecognised route. A till is a single-screen application, so a mistyped
+    or stale URL is the realistic cause rather than a missing content page.
+*@
+
+<PageTitle>Not found — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+    <div class="pos-empty" style="margin: 4rem auto; max-width: 32rem;">
+        <h1>Page not found</h1>
+        <p>That address is not part of the till.</p>
+        <a class="btn btn--primary" href="/">Back to checkout</a>
+    </div>
+</div>

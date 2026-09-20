@@ -1,0 +1,11 @@
+/*
+    The status line collapses when it has nothing to say.
+
+    It is rendered empty rather than omitted, so that the live region is in the page before its
+    content changes — see the component. `:empty` is what keeps an always-present region from leaving
+    a blank coloured bar on every screen.
+*/
+
+.pos-message:empty {
+    display: none;
+}

@@ -1,0 +1,114 @@
+/* app.css — the application shell.
+ *
+ * Loaded before every other stylesheet, so it holds only what has to be right before Blazor has
+ * rendered anything: the page background, the loading indicator, and the unhandled-error bar.
+ *
+ * The Blazor template ships this file alongside the whole Bootstrap distribution. Bootstrap is
+ * deliberately gone: nothing in this app uses a single one of its classes, the till defines its own
+ * (.btn, .badge, and the .pos-* / .dev-* / .cd-* families), and shipping 8 MB of framework CSS that
+ * loses every specificity contest to pos.css was both dead weight and a standing invitation to
+ * "why does this button look like that". Removing it took seven stylesheets, six scripts, and
+ * twenty-two source maps out of the offline cache as well.
+ */
+
+html, body {
+    /* The neon-skeleton font stack (Aldrich, with Segoe UI as fallback) and dark surface, read
+       from the library's :root tokens so the shell re-themes with the library. */
+    font-family: var(--font-base);
+
+    /* The dark surface, set here rather than only on .pos-shell so that the loading screen, the
+       error bar, and the till are all the same colour. Without it the browser paints white until
+       Blazor's first render, which is a flash of light on every load — and it disagrees with the
+       manifest's background_color, which is what the operating system paints on the splash screen
+       when the app is launched from the home screen. */
+    background: var(--background);
+
+    /* Number inputs, selects, and scrollbars follow the platform theme. The till is dark and full of
+       both, so without this they render as bright white controls on a dark card. */
+    color-scheme: dark;
+}
+
+/* ----------------------------------------------------- neon-skeleton integration
+ *
+ * css/neon-skeleton.css loads before this file and supplies the design tokens, the font stack,
+ * and the neon-styled form controls. Two conventions it inherits from Skeleton are undone here
+ * because every stylesheet in this app was written against a 16px root and its own font scale:
+ *
+ * 1. Skeleton sets html to 62.5% so that 1.5rem == 15px. The app's rem scale — touch targets,
+ *    spacing, type — assumes 1rem == 16px, so the root size is restored.
+ * 2. Its body font-size is 1.5em of that shrunken root; restored to 1rem. The library's
+ *    colours, background ambience, and typography otherwise stand.
+ */
+html {
+    font-size: 100%;
+}
+
+body {
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+/* ------------------------------------------------------------- unhandled error bar */
+
+/* Shown by the framework when the app throws outside a component's own handling. Deliberately loud
+   and light: it is the one thing on screen that must not be mistaken for part of the till. */
+#blazor-error-ui {
+    color-scheme: light only;
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
+
+/* ------------------------------------------------------------------- loading screen */
+
+/* Rendered from index.html before the runtime has started, and replaced by the first page once it
+   has. Recoloured to the till's own palette rather than the template's blue-on-white, so the wait
+   looks like the app starting up instead of a different application. */
+.loading-progress {
+    position: absolute;
+    display: block;
+    width: 8rem;
+    height: 8rem;
+    inset: 20vh 0 auto 0;
+    margin: 0 auto 0 auto;
+}
+
+    .loading-progress circle {
+        fill: none;
+        stroke: var(--surface-2);
+        stroke-width: 0.6rem;
+        transform-origin: 50% 50%;
+        transform: rotate(-90deg);
+    }
+
+        .loading-progress circle:last-child {
+            stroke: var(--neon);
+            stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+            transition: stroke-dasharray 0.05s ease-in-out;
+        }
+
+.loading-progress-text {
+    position: absolute;
+    text-align: center;
+    font-weight: bold;
+    color: var(--text-muted);
+    inset: calc(20vh + 3.25rem) 0 auto 0.2rem;
+}
+
+    .loading-progress-text:after {
+        content: var(--blazor-load-percentage-text, "Loading");
+    }

@@ -1,0 +1,129 @@
+@*
+    Inter-store stock transfers.
+
+    Loaded after devices.css, whose .dev-card, .dev-hint, .dev-form and .dev-actions the screen
+    reuses. Only what a transfer needs beyond those lives here.
+*@
+
+/* ------------------------------------------------------------------------ panels */
+
+.dev-card + .dev-card {
+    margin-top: 1rem;
+}
+
+/* Breathing room between a table and the form that follows it, since both can sit in one card. */
+.transfer-matches + .pos-empty,
+.pos-lines + .dev-form {
+    margin-top: 0.75rem;
+}
+
+.transfer-barcode {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--pos-muted);
+}
+
+/* --------------------------------------------------------------- counting in goods */
+
+/*
+    Narrow, because the numbers are small and a wide box invites a mis-keyed digit. Tabular figures
+    so a column of counts stays aligned and a wrong entry is visible as out of line.
+*/
+.transfer-count {
+    max-width: 7rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+    A shortage is the one number on this screen that means something went wrong between two shops.
+    Marked in the table rather than left plain, because it is the figure someone is looking for.
+*/
+.transfer-short {
+    color: var(--pos-danger);
+    font-weight: 600;
+}
+
+/* ------------------------------------------------------------------------- states */
+
+.transfer-state {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    background: var(--pos-surface-2);
+    color: var(--pos-muted);
+}
+
+/* Not sent: the goods are still on the shelf. */
+.transfer-state--draft {
+    border: 1px dashed var(--pos-border);
+}
+
+/* On a van, in neither store's books. The state most likely to puzzle someone. */
+.transfer-state--transit {
+    border: 1px solid var(--pos-warn);
+    color: var(--pos-warn);
+}
+
+.transfer-state--received {
+    border: 1px solid var(--pos-ok);
+    color: var(--pos-ok);
+}
+
+.transfer-state--cancelled {
+    text-decoration: line-through;
+}
+
+/* ------------------------------------------------------------------- product picks */
+
+.transfer-matches {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.transfer-matches .btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    text-align: left;
+}
+
+/* ------------------------------------------------------------------------ checkbox */
+
+.transfer-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    /* A sentence next to a checkbox, not a form caption: undo neon-skeleton's label styling. */
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--pos-text);
+}
+
+.transfer-check input {
+    width: 1.15rem;
+    height: 1.15rem;
+}
+
+/* ---------------------------------------------------------------- enrolment warning */
+
+/*
+    Enrolment erases local data, which is a destructive act taken deliberately at setup rather than
+    a passing caution, so it is marked rather than left as ordinary grey help text.
+*/
+.dev-hint--warn {
+    color: var(--pos-danger);
+    border-left: 3px solid var(--pos-danger);
+    background: var(--pos-surface-2);
+    padding: 0.6rem 0.75rem;
+    border-radius: 0 6px 6px 0;
+}

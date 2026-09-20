@@ -1,0 +1,19 @@
+@*
+    Routing for the till.
+
+    Two deliberate departures from the Blazor template:
+
+    1. FocusOnNavigate is removed. The template focuses the page heading after navigation,
+       which would pull focus out of the scan box. A keyboard-wedge barcode scanner types
+       into whatever is focused, so losing focus means scans silently vanish into the page
+       instead of the basket. The checkout screen manages its own focus.
+
+    2. NotFoundPage points at the app's own not-found screen rather than relying on the
+       default, so a stale URL lands somewhere that leads back to the till.
+*@
+
+<Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+    </Found>
+</Router>

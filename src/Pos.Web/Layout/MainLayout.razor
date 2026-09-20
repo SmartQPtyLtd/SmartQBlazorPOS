@@ -1,0 +1,12 @@
+@inherits LayoutComponentBase
+
+@*
+    Full-width, chrome-free shell.
+
+    The till screen brings its own status bar and controls, so the template's sidebar and
+    top row are removed deliberately: they would consume horizontal space the basket table
+    needs, and any focusable element outside the scan box risks stealing focus from a
+    keyboard-wedge scanner, which types into whatever is focused.
+*@
+
+@Body

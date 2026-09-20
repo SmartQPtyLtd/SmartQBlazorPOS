@@ -1,0 +1,598 @@
+/* devices.css — device settings and enrolment.
+ *
+ * A diagnostic screen, so it favours density and legibility over the large touch targets the
+ * till uses: it is read by whoever is setting the terminal up, not by a cashier mid-sale.
+ * Rule names are prefixed .dev- for the same reason the other sheets are prefixed.
+ */
+
+.dev-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    align-items: start;
+}
+
+.dev-card {
+    background: var(--pos-surface);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    padding: 1rem;
+}
+
+.dev-card h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.1rem;
+}
+
+.dev-facts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 0.35rem 0.75rem;
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+}
+
+.dev-facts dt {
+    color: var(--pos-muted);
+}
+
+.dev-facts dd {
+    margin: 0;
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+}
+
+.dev-detail {
+    font-size: 0.85rem;
+    color: var(--pos-muted);
+    margin: 0 0 0.75rem;
+}
+
+.dev-warn {
+    font-size: 0.9rem;
+    border-left: 3px solid var(--pos-warn);
+    background: var(--pos-surface-2);
+    padding: 0.6rem 0.75rem;
+    margin: 0 0 0.75rem;
+    border-radius: 0 6px 6px 0;
+}
+
+.dev-hint {
+    font-size: 0.82rem;
+    color: var(--pos-muted);
+    margin: 0.75rem 0 0;
+}
+
+.dev-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.dev-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.dev-form label {
+    font-size: 0.82rem;
+    color: var(--pos-muted);
+}
+
+/* Smaller than the till's scan box: this is typed once during setup, not scanned all day. */
+.dev-input {
+    font-size: 1rem !important;
+    padding: 0.6rem !important;
+    min-height: 44px !important;
+}
+
+/* ------------------------------------------------------------------ hourly chart */
+
+.rep-hours {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.rep-hour {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr) 5.5rem;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.rep-hour__label {
+    color: var(--pos-muted);
+}
+
+/* The bar's fill is a background gradient whose stop is set inline as a percentage of the
+   busiest hour, so the shape of the day is readable at a glance. A gradient is used rather
+   than a child element or a z-index trick, both of which are fragile once the surrounding
+   stacking context changes. */
+.rep-hour__bar {
+    display: block;
+    height: 0.9rem;
+    border-radius: 2px;
+    background-color: var(--pos-surface-2);
+    background-image: linear-gradient(var(--pos-accent), var(--pos-accent));
+    background-repeat: no-repeat;
+    background-size: var(--fill, 0%) 100%;
+}
+
+.rep-hour__value {
+    text-align: right;
+}
+
+/* ------------------------------------------------------------- period reporting */
+
+/* An idle day is dimmed rather than removed. The gap is the information: it is the difference
+   between a shop that was shut and a shop that traded badly. */
+.rep-day--idle {
+    opacity: 0.55;
+}
+
+.rep-none {
+    color: var(--pos-muted);
+}
+
+.rep-change {
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid var(--pos-border);
+    background: var(--pos-surface-2);
+    border-radius: 0 6px 6px 0;
+    font-size: 0.9rem;
+}
+
+.rep-change__detail {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--pos-muted);
+    font-size: 0.82rem;
+}
+
+/* Growth and decline are both normal; the colour marks direction, not merit. A period with
+   nothing to compare against is deliberately unpainted — it is not a flat result. */
+.rep-change--up {
+    border-left-color: var(--pos-ok);
+}
+
+.rep-change--down {
+    border-left-color: var(--pos-warn);
+}
+
+.rep-change--flat {
+    border-left-color: var(--pos-border);
+}
+
+.rep-change--none {
+    border-left-color: var(--pos-border);
+    color: var(--pos-muted);
+}
+
+/* ----------------------------------------------------------------------- refunds */
+
+.ref-lookup {
+    margin: 1rem;
+}
+
+.ref-recent {
+    margin-top: 0.75rem;
+}
+
+.ref-recent summary {
+    cursor: pointer;
+    color: var(--pos-muted);
+    font-size: 0.9rem;
+    padding: 0.35rem 0;
+}
+
+.ref-recent__list {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    max-height: 16rem;
+    overflow-y: auto;
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+}
+
+.ref-recent__item {
+    display: grid;
+    /* Receipt number, then time, then amount — the order an operator reads them in. */
+    grid-template-columns: minmax(0, 1fr) 5rem 6rem;
+    gap: 0.5rem;
+    align-items: center;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: var(--pos-surface);
+    border: none;
+    border-bottom: 1px solid var(--pos-border);
+    color: var(--pos-text);
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.ref-recent__item:hover,
+.ref-recent__item:focus {
+    background: var(--pos-surface-2);
+}
+
+.ref-recent__list li:last-child .ref-recent__item {
+    border-bottom: none;
+}
+
+.ref-recent__time {
+    color: var(--pos-muted);
+}
+
+.ref-recent__total {
+    text-align: right;
+}
+
+/* A fully refunded line is dimmed and its input replaced, so the operator can see at a glance
+   what is still returnable rather than discovering it when the refund is refused. */
+.ref-line--done {
+    opacity: 0.5;
+}
+
+.ref-done {
+    color: var(--pos-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* ----------------------------------------------------------------------- catalogue */
+
+.cat-toolbar {
+    margin: 1rem;
+}
+
+/* A product that has never moved is not the same as one that has sold out, so the two states are
+   styled differently rather than both reading as "0". */
+.cat-nohistory {
+    color: var(--pos-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+.cat-out {
+    color: var(--pos-danger);
+}
+
+.cat-in {
+    color: var(--pos-ok);
+}
+
+.cat-evidence {
+    color: var(--pos-muted);
+    font-size: 0.82rem;
+}
+
+/* The movement history sits under the form and scrolls independently, so a long ledger does not
+   push the rest of the page away. */
+.cat-history {
+    margin-top: 0.75rem;
+    max-height: 20rem;
+    overflow-y: auto;
+    display: block;
+}
+
+/* ------------------------------------------------------------------------ sign-in */
+
+/* Two columns on a till: who is signing in on the left, the pad on the right. A cashier has
+   already been identified by the time they type, so the roster stays visible as confirmation. */
+.si-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    align-items: start;
+}
+
+.si-roster {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.si-person {
+    display: grid;
+    grid-template-columns: 3rem minmax(0, 1fr) 6rem;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--pos-surface);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    color: var(--pos-text);
+    text-align: left;
+    cursor: pointer;
+    /* Comfortably above the 44px minimum: this is pressed with a thumb, often in a hurry. */
+    min-height: 64px;
+    font-size: 1rem;
+}
+
+.si-person:hover:not(:disabled),
+.si-person:focus-visible {
+    background: var(--pos-surface-2);
+}
+
+.si-person--chosen {
+    border-color: var(--pos-accent);
+    box-shadow: inset 0 0 0 1px var(--pos-accent);
+}
+
+.si-person:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.si-person__initials {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    background: var(--pos-surface-2);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.si-person__name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.si-person__role {
+    color: var(--pos-muted);
+    font-size: 0.82rem;
+    text-align: right;
+}
+
+/* The PIN is shown, not masked. See SignIn.razor.cs for why. */
+.si-pin {
+    display: flex;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.si-pin__dot {
+    width: 2.5rem;
+    height: 3.25rem;
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    background: var(--pos-surface-2);
+}
+
+.si-pin__dot--filled {
+    background: var(--pos-accent);
+    border-color: var(--pos-accent);
+}
+
+/* An explicit grid rather than a keyboard listener: a wedged barcode scanner types into whatever
+   is focused, so a page that accepted raw keystrokes could be signed into from a scan. */
+.si-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    max-width: 20rem;
+}
+
+.si-pad__key {
+    min-height: 56px;
+    font-size: 1.35rem;
+    font-variant-numeric: tabular-nums;
+    background: var(--pos-surface);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    color: var(--pos-text);
+    cursor: pointer;
+}
+
+.si-pad__key:hover:not(:disabled) {
+    background: var(--pos-surface-2);
+}
+
+.si-pad__key:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.si-pad__key--wide {
+    grid-column: span 2;
+    font-size: 1rem;
+}
+
+.si-float {
+    margin-top: 1rem;
+}
+
+.si-demo {
+    margin: 0 1rem 1rem;
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid var(--pos-warn);
+    background: var(--pos-surface-2);
+    border-radius: 0 6px 6px 0;
+}
+
+/* -------------------------------------------------------------- drawer and shift */
+
+.sh-card {
+    margin: 1rem;
+}
+
+.sh-headline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.sh-headline h2 {
+    margin: 0;
+}
+
+.sh-headline .dev-hint {
+    margin-top: 0.25rem;
+}
+
+.sh-headline__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.sh-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The labels in these tables are row headers, not column headers: they are <th scope="row"> so a
+   screen reader reads "Cash taken, 412.50" rather than an unlabelled stream of figures. A bare
+   <th> would render bold and centred, which is wrong for a label column, so both cell kinds are
+   styled together and the header weight is reset. neon-skeleton's neon uppercase column-header
+   treatment is reset for the same reason. */
+.sh-table td,
+.sh-table th {
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--pos-border);
+    text-align: left;
+    font-weight: inherit;
+    font-size: inherit;
+    color: inherit;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.sh-table tr:last-child td,
+.sh-table tr:last-child th {
+    border-bottom: none;
+}
+
+.sh-table .num {
+    text-align: right;
+}
+
+.sh-total td,
+.sh-total th {
+    font-weight: 600;
+}
+
+/* A shortage is the case worth looking at, so it is the one that gets colour. A balanced drawer
+   is the expected outcome and does not need to draw the eye. */
+.sh-short td,
+.sh-short th {
+    color: var(--pos-danger);
+    font-weight: 700;
+}
+
+.sh-over td,
+.sh-over th {
+    color: var(--pos-warn);
+    font-weight: 700;
+}
+
+.sh-warn td,
+.sh-warn th {
+    color: var(--pos-warn);
+}
+
+.sh-table--cashup {
+    margin-bottom: 0.5rem;
+}
+
+/* The signed-in operator, in the till's status bar. Styled as a button because an unattributed
+   till is a state the operator can fix from here rather than merely a label. */
+.pos-operator {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    padding: 0.35rem 0.7rem;
+    background: var(--pos-surface-2);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    color: var(--pos-text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1.2;
+}
+
+.pos-operator:hover {
+    border-color: var(--pos-accent);
+}
+
+.pos-operator__role {
+    color: var(--pos-muted);
+    font-size: 0.72rem;
+}
+
+/* A till that cannot attribute its takings is degraded, and says so. */
+.pos-operator--none {
+    border-color: var(--pos-warn);
+    color: var(--pos-warn);
+}
+
+/* The pill's little menu — cash drawer, sign out. Anchored to the pill so it drops from
+   the name it belongs to rather than floating free. */
+.pos-operator-wrap {
+    position: relative;
+}
+
+.pos-operator-menu {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 10rem;
+    padding: 0.25rem;
+    background: var(--pos-surface-2);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.25);
+}
+
+.pos-operator-menu__item {
+    padding: 0.5rem 0.7rem;
+    background: none;
+    border: none;
+    border-radius: var(--pos-radius);
+    color: var(--pos-text);
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.pos-operator-menu__item:hover {
+    background: var(--pos-surface);
+}
+
+/* Catches taps anywhere outside the menu so it closes without a dedicated dismiss control. */
+.pos-operator-menu__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: default;
+}

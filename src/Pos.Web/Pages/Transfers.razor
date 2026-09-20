@@ -1,0 +1,391 @@
+@page "/transfers"
+@using Pos.Infrastructure.Storage
+@using Pos.Infrastructure.Sync
+@using Pos.Web.Terminal
+@inject CheckoutSession Session
+@implements IAsyncDisposable
+
+<PageTitle>Stock transfers — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Stock transfers</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Stock transfers</strong>
+            <span class="pos-status__code">@Session.Store?.Name</span>
+        </div>
+        <div class="pos-status__indicators">
+            <button class="btn btn--small" @onclick="ReloadAsync" disabled="@_busy">Refresh</button>
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    @* Not a status region, deliberately. This is a condition of the page rather than something that
+       just happened, and it is present from the first render — a live region that arrives already
+       full is never announced, so the attribute would only have looked like it worked. It is read in
+       document order, which is what a notice wants. *@
+    @if (!CanTransfer)
+    {
+        <div class="pos-message pos-message--error">
+            Moving stock between stores needs a supervisor. Sign in as one to raise, send, or book in
+            a transfer.
+        </div>
+    }
+
+    @* --------------------------------------------------------------- awaiting receipt *@
+    <section class="dev-card">
+        <h2>Waiting to be booked in</h2>
+
+        @if (_receiving is { } arriving)
+        {
+            <p class="dev-hint">
+                <strong>@arriving.Reference</strong>, sent from @StoreLabel(arriving.FromStoreId).
+                Count what actually arrived. Leave a line blank if it came in full — only type a
+                number where something is missing.
+            </p>
+
+            <table class="pos-lines">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th class="num">Sent</th>
+                        <th class="num">Counted</th>
+                        <th class="num">Difference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in arriving.Lines)
+                    {
+                        var raw = _counted.TryGetValue(line.ProductId, out var typed) ? typed : string.Empty;
+                        var parsed = ParseCount(raw);
+                        var difference = parsed - line.QuantitySent;
+
+                        <tr>
+                            <td>
+                                <strong>@line.Name</strong>
+                                <span class="transfer-barcode">@line.Barcode</span>
+                            </td>
+                            <td class="num">@Format(line.QuantitySent)</td>
+                            <td class="num">
+                                <input class="pos-scan__input dev-input transfer-count"
+                                       type="text"
+                                       inputmode="decimal"
+                                       placeholder="@Format(line.QuantitySent)"
+                                       aria-label="@($"Counted quantity for {line.Name}")"
+                                       value="@raw"
+                                       @oninput="e => _counted[line.ProductId] = e.Value?.ToString() ?? string.Empty" />
+                            </td>
+                            <td class="num @(difference is not null && difference != 0 ? "transfer-short" : null)">
+                                @(difference is null ? "—" : Format(difference.Value))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div class="dev-form">
+                <label for="receiveNote">Note (optional — what explains the difference?)</label>
+                <input id="receiveNote" class="pos-scan__input dev-input" @bind="_receiveNote" />
+            </div>
+
+            <div class="dev-actions">
+                <button class="btn btn--primary"
+                        @onclick="ReceiveAsync"
+                        disabled="@(_busy || !CanTransfer)">
+                    Book in
+                </button>
+                <button class="btn" @onclick="CancelReceiving" disabled="@_busy">Cancel</button>
+            </div>
+        }
+        else if (!AwaitingReceipt.Any())
+        {
+            <div class="pos-empty">
+                <p>Nothing is on its way here.</p>
+                <p class="pos-empty__hint">
+                    Transfers other stores send appear here once the hub has relayed them, and the hub
+                    only relays what the sending till has synced. An empty list can simply mean the
+                    sender has not synced yet.
+                </p>
+            </div>
+        }
+        else
+        {
+            <table class="pos-lines">
+                <thead>
+                    <tr>
+                        <th>Reference</th>
+                        <th>From</th>
+                        <th>Sent</th>
+                        <th class="num">Lines</th>
+                        <th class="num">Units</th>
+                        <th scope="col"><span class="pos-visually-hidden">Start receiving</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var transfer in AwaitingReceipt)
+                    {
+                        <tr>
+                            <td><strong>@transfer.Reference</strong></td>
+                            <td>@StoreLabel(transfer.FromStoreId)</td>
+                            <td>@When(transfer)</td>
+                            <td class="num">@transfer.Lines.Count</td>
+                            <td class="num">@Format(transfer.Lines.Sum(l => l.QuantitySent))</td>
+                            <td>
+                                <button class="btn btn--small btn--primary"
+                                        @onclick="() => BeginReceiving(transfer)"
+                                        disabled="@(!CanTransfer)">
+                                    Book in
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @* ---------------------------------------------------------------------- raise new *@
+    <section class="dev-card">
+        <h2>Send stock to another store</h2>
+
+        @if (!HasDestinations)
+        {
+            <div class="pos-empty">
+                <p>No destination stores are known.</p>
+                <p class="pos-empty__hint">
+                    The branch list comes from the hub, and a till deliberately has no way to invent
+                    one — the head-office token is not kept in a shop's browser. Enrol this terminal
+                    in <a href="devices">device settings</a> and let it sync, and the shops it may send
+                    stock to will appear here.
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="dev-form">
+                <label for="destination">Destination</label>
+                <select id="destination" class="dev-input" @bind="_destinationStoreId">
+                    @foreach (var target in _targets)
+                    {
+                        <option value="@target.Id">@target.Code — @target.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="dev-form">
+                <label for="findProduct">Find a product</label>
+                <input id="findProduct" class="pos-scan__input dev-input"
+                       type="text"
+                       autocomplete="off"
+                       placeholder="Name, barcode, or SKU"
+                       @bind="_raiseSearch"
+                       @bind:event="oninput" />
+            </div>
+
+            @if (RaiseMatches.Any())
+            {
+                <ul class="transfer-matches">
+                    @foreach (var item in RaiseMatches)
+                    {
+                        <li>
+                            <button class="btn btn--small" @onclick="() => AddDraftLine(item)">
+                                @item.Product.Name
+                                <span class="transfer-barcode">@item.Product.Barcode</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (DraftLineCount == 0)
+            {
+                <div class="pos-empty">
+                    <p>Nothing added yet.</p>
+                    <p class="pos-empty__hint">Search above and pick the products going on the van.</p>
+                </div>
+            }
+            else
+            {
+                <table class="pos-lines">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th class="num">Quantity</th>
+                            <th scope="col"><span class="pos-visually-hidden">Remove the line</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _draft.Values)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@line.Name</strong>
+                                    <span class="transfer-barcode">@line.Barcode</span>
+                                </td>
+                                <td class="num">
+                                    <input class="pos-scan__input dev-input transfer-count"
+                                           type="number"
+                                           min="0"
+                                           step="1"
+                                           aria-label="@($"Quantity to send of {line.Name}")"
+                                           value="@line.Quantity"
+                                           @onchange="e => SetDraftQuantity(line.ProductId, ToDecimal(e.Value))" />
+                                </td>
+                                <td>
+                                    <button class="btn btn--small"
+                                            @onclick="() => RemoveDraftLine(line.ProductId)"
+                                            disabled="@_busy">
+                                        Remove
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <div class="dev-form">
+                    <label for="raiseNote">Note (optional)</label>
+                    <input id="raiseNote" class="pos-scan__input dev-input" @bind="_raiseNote" />
+                </div>
+
+                <label class="transfer-check">
+                    <input type="checkbox" @bind="_dispatchImmediately" />
+                    <span>Send now — the stock leaves this store immediately</span>
+                </label>
+
+                <p class="dev-hint">
+                    @Format(DraftQuantity) units across @DraftLineCount
+                    @(DraftLineCount == 1 ? "line" : "lines").
+                    @if (_dispatchImmediately)
+                    {
+                        <text>
+                            They will be in neither store's stock until the destination books them in.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>
+                            Saved as a draft, it moves nothing and the destination is not told about
+                            it.
+                        </text>
+                    }
+                </p>
+
+                <div class="dev-actions">
+                    <button class="btn btn--primary"
+                            @onclick="RaiseAsync"
+                            disabled="@(_busy || !CanTransfer)">
+                        @(_dispatchImmediately ? "Raise and send" : "Save draft")
+                    </button>
+                    <button class="btn" @onclick="ClearDraft" disabled="@_busy">Clear</button>
+                </div>
+            }
+        }
+    </section>
+
+    @* ------------------------------------------------------------------- sent from here *@
+    <section class="dev-card">
+        <h2>Sent from here</h2>
+
+        @if (_outgoing.Count == 0)
+        {
+            <div class="pos-empty">
+                <p>This store has not sent any stock.</p>
+            </div>
+        }
+        else
+        {
+            <table class="pos-lines">
+                <thead>
+                    <tr>
+                        <th>Reference</th>
+                        <th>Destination</th>
+                        <th>Status</th>
+                        <th>Updated</th>
+                        <th class="num">Units</th>
+                        <th class="num">Short</th>
+                        <th scope="col"><span class="pos-visually-hidden">Dispatch</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var transfer in _outgoing)
+                    {
+                        var missing = Shortfall(transfer);
+
+                        <tr>
+                            <td><strong>@transfer.Reference</strong></td>
+                            <td>@StoreLabel(transfer.ToStoreId)</td>
+                            <td><span class="transfer-state @StatusClass(transfer.Status)">@StatusLabel(transfer.Status)</span></td>
+                            <td>@When(transfer)</td>
+                            <td class="num">@Format(transfer.Lines.Sum(l => l.QuantitySent))</td>
+                            <td class="num @(missing != 0 ? "transfer-short" : null)">
+                                @(missing == 0 ? "—" : Format(missing))
+                            </td>
+                            <td>
+                                @if (transfer.Status == "Draft")
+                                {
+                                    <button class="btn btn--small btn--primary"
+                                            @onclick="() => DispatchAsync(transfer)"
+                                            disabled="@(_busy || !CanTransfer)">
+                                        Send
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @* -------------------------------------------------------------------- received here *@
+    <section class="dev-card">
+        <h2>Received here</h2>
+
+        @if (!ReceivedHere.Any())
+        {
+            <div class="pos-empty">
+                <p>No transfers have been booked in at this store.</p>
+            </div>
+        }
+        else
+        {
+            <table class="pos-lines">
+                <thead>
+                    <tr>
+                        <th>Reference</th>
+                        <th>From</th>
+                        <th>Booked in</th>
+                        <th class="num">Sent</th>
+                        <th class="num">Counted</th>
+                        <th class="num">Short</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var transfer in ReceivedHere)
+                    {
+                        var sent = transfer.Lines.Sum(l => l.QuantitySent);
+                        var counted = transfer.Lines.Sum(l => l.QuantityCounted ?? l.QuantitySent);
+
+                        <tr>
+                            <td><strong>@transfer.Reference</strong></td>
+                            <td>@StoreLabel(transfer.FromStoreId)</td>
+                            <td>@When(transfer)</td>
+                            <td class="num">@Format(sent)</td>
+                            <td class="num">@Format(counted)</td>
+                            <td class="num @(sent - counted != 0 ? "transfer-short" : null)">
+                                @(sent - counted == 0 ? "—" : Format(sent - counted))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+</div>

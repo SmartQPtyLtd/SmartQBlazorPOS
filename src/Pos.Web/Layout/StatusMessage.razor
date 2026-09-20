@@ -1,0 +1,30 @@
+@*
+    The status line every screen reports through.
+
+    Rendered whether or not there is anything to say, and that is the whole point. Every page used to
+    wrap this in `@if (_message is not null)`, which meant the live region was created at the same
+    moment as its content. A region that appears already full is not announced by most screen readers:
+    the till's entire feedback model — "Added Cola 500ml", "Sale CT01-20260325-0007 recorded", "A
+    reason is required to open the drawer without a sale" — was silent for anybody not watching the
+    screen. The region has to exist first, empty, and then change.
+
+    `polite` rather than `alert`, deliberately. An operator is mid-task with a customer in front of
+    them, and an assertive interruption on every scanned item would talk over the thing they are
+    trying to do. Errors are distinguished visually; the announcement waits its turn.
+*@
+
+<div class="pos-message @(IsError ? "pos-message--error" : "pos-message--info")"
+     role="status"
+     aria-live="polite">
+    @Message
+</div>
+
+@code {
+    /// <summary>What to say, or null for nothing.</summary>
+    [Parameter]
+    public string? Message { get; set; }
+
+    /// <summary>True when the message reports a refusal rather than a success.</summary>
+    [Parameter]
+    public bool IsError { get; set; }
+}

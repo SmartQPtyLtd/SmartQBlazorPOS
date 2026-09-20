@@ -1,0 +1,390 @@
+@page "/"
+@using Pos.Core.Domain
+@using Pos.Devices.EscPos
+@using Pos.Infrastructure.Checkout
+@using Pos.Infrastructure.Storage
+@using Pos.Infrastructure.Sync
+@using Pos.Web.Terminal
+@inject TerminalStartup Startup
+@inject CheckoutSession Session
+@inject OperatorSignInMarker SignInMarker
+@inject ILocalStore LocalStore
+@inject CheckoutRecordingService Recorder
+@inject TerminalPrinterProvider Printers
+@inject SyncClient Sync
+@inject TerminalIdentity Identity
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<Checkout> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Checkout — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+    @* ---------------------------------------------------------------- status bar *@
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Checkout</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>@(_store?.Name ?? "Starting…")</strong>
+            <span class="pos-status__code">@_store?.Code</span>
+        </div>
+
+        <div class="pos-status__indicators">
+            @* Who is answerable for the cash right now. Deliberately a button, not a badge:
+               an unattributed till is a state the operator should be able to fix from here.
+               Signed in, the pill opens a small menu — cash drawer, sign out; signed out,
+               it goes straight to the sign-in screen. *@
+            <div class="pos-operator-wrap">
+                <button class="pos-operator @(Session.IsSignedIn ? null : "pos-operator--none")"
+                        @onclick="OnOperatorPill">
+                    @if (Session.Employee is { } operatorNow)
+                    {
+                        <span>@operatorNow.Name</span>
+                        <span class="pos-operator__role">@RoleOf(operatorNow)</span>
+                    }
+                    else
+                    {
+                        <span>No operator signed in</span>
+                        <span class="pos-operator__role">Sign in</span>
+                    }
+                </button>
+
+                @if (_operatorMenuOpen && Session.IsSignedIn)
+                {
+                    @* A transparent backdrop closes the menu on any outside tap; the menu
+                       itself sits above it. *@
+                    <button class="pos-operator-menu__backdrop"
+                            @onclick="CloseOperatorMenu"
+                            aria-label="Close the operator menu"
+                            tabindex="-1"></button>
+
+                    <div class="pos-operator-menu">
+                        <button class="pos-operator-menu__item" @onclick="OpenDrawerFromMenu">
+                            Cash drawer
+                        </button>
+                        <button class="pos-operator-menu__item" @onclick="SignOutFromMenu">
+                            Sign out
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <span class="badge @(_printerReady ? "badge--ok" : "badge--warn")">
+                Printer: @_printerName
+            </span>
+            <span class="badge @(_pendingSync == 0 ? "badge--ok" : "badge--warn")">
+                Sync: @(_pendingSync == 0 ? "all sent" : $"{_pendingSync} queued")
+            </span>
+            <span class="badge @(_persisted ? "badge--ok" : "badge--danger")">
+                Storage: @(_persisted ? "durable" : "may be evicted")
+            </span>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    <div class="pos-body">
+
+        @* ------------------------------------------------------------------- cart *@
+        <main class="pos-main">
+
+            <div class="pos-scan">
+                <input @ref="_scanInput"
+                       class="pos-scan__input"
+                       type="text"
+                       inputmode="numeric"
+                       autocomplete="off"
+                       aria-label="Scan a barcode or search for a product"
+                       placeholder="Scan a barcode or type to search, then press Enter"
+                       @bind="_scanText"
+                       @bind:event="oninput"
+                       @onkeydown="OnScanKeyDown"
+                       disabled="@(!_ready)" />
+
+                <button class="btn btn--ghost" @onclick="FocusScanner" disabled="@(!_ready)">
+                    Focus scanner
+                </button>
+            </div>
+
+            @if (_matches.Count > 0)
+            {
+                <ul class="pos-matches">
+                    @foreach (var match in _matches)
+                    {
+                        <li>
+                            <button class="pos-match" @onclick="() => AddProductAsync(match)">
+                                <span class="pos-match__name">@match.Name</span>
+                                <span class="pos-match__barcode">@match.Barcode</span>
+                                <span class="pos-match__price">@Format(match.UnitPrice)</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (Cart is null || Cart.IsEmpty)
+            {
+                <div class="pos-empty">
+                    <p>No items yet.</p>
+                    <p class="pos-empty__hint">
+                        Try <code>6001000000017</code> (Cola) or type “milk” to search.
+                    </p>
+                </div>
+            }
+            else
+            {
+                <table class="pos-lines">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="num">Qty</th>
+                            <th class="num">Price</th>
+                            <th class="num">Total</th>
+                            <th scope="col"><span class="pos-visually-hidden">Remove the line</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in Cart.Lines)
+                        {
+                            var captured = line;
+                            <tr>
+                                <td>
+                                    <span class="pos-lines__name">@line.Name</span>
+                                    @if (line.LineDiscount is { } discount)
+                                    {
+                                        <span class="pos-lines__note">@discount</span>
+                                    }
+                                </td>
+                                <td class="num">
+                                    <input class="pos-qty"
+                                           type="number"
+                                           min="0.001"
+                                           step="1"
+                                           value="@line.Quantity"
+                                           @onchange="e => OnQuantityChangedAsync(captured, e)" />
+                                </td>
+                                <td class="num">@Format(line.UnitPrice.Amount)</td>
+                                <td class="num">@Format(line.NetAmount)</td>
+                                <td>
+                                    <button class="btn btn--danger btn--small"
+                                            @onclick="() => RemoveLine(captured)">
+                                        Void
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </main>
+
+        @* ----------------------------------------------------------------- totals *@
+        <aside class="pos-side">
+            @if (Totals is { } totals)
+            {
+                <div class="pos-totals">
+                    <div class="pos-totals__row">
+                        <span>Items</span>
+                        <span>@totals.LineTotals.Count</span>
+                    </div>
+
+                    @if (totals.TotalDiscounts > 0m)
+                    {
+                        <div class="pos-totals__row">
+                            <span>Discounts</span>
+                            <span>-@Format(totals.TotalDiscounts)</span>
+                        </div>
+                    }
+
+                    <div class="pos-totals__row pos-totals__row--grand">
+                        <span>Total</span>
+                        <span>@Format(totals.Total)</span>
+                    </div>
+
+                    <div class="pos-totals__tax">
+                        @if (_store?.TaxMode == TaxMode.Inclusive)
+                        {
+                            <span>includes @Format(totals.Tax.Tax) tax</span>
+                        }
+                        else
+                        {
+                            <span>plus @Format(totals.Tax.Tax) tax</span>
+                        }
+                    </div>
+                </div>
+
+                @* ------------------------------------------------------------ tender *@
+                @* A customer routinely pays in more than one way: part cash, part card, a
+                   voucher for the rest. The panel shows what is still owed rather than assuming
+                   one payment settles everything, and the sale cannot complete until the balance
+                   reaches zero. *@
+                <div class="pos-tender">
+                    <div class="pos-tender__row">
+                        <span>Outstanding</span>
+                        <strong class="@(Tender.IsSettled ? "tender-settled" : "tender-open")">
+                            @Format(Tender.Outstanding)
+                        </strong>
+                    </div>
+
+                    @if (Tender.ChangeDue > 0m)
+                    {
+                        <div class="pos-tender__row pos-tender__row--change">
+                            <span>Change</span>
+                            <strong>@Format(Tender.ChangeDue)</strong>
+                        </div>
+                    }
+
+                    @if (!Tender.IsEmpty)
+                    {
+                        <ul class="tender-list">
+                            @foreach (var applied in Tender.Applied)
+                            {
+                                var captured = applied;
+
+                                <li class="tender-list__item">
+                                    <span>@DescribeTender(applied)</span>
+                                    <span class="tender-list__amount">@Format(applied.Amount.Amount)</span>
+                                    <button class="btn btn--danger btn--small"
+                                            @onclick="() => RemoveTender(captured)"
+                                            title="Remove this payment">
+                                        Remove
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    @if (!Tender.IsSettled)
+                    {
+                        <div class="pos-tender__inputs">
+                            <div class="pos-tender__field">
+                                <label for="tendered">Cash received</label>
+                                <input id="tendered"
+                                       class="pos-tender__input"
+                                       type="number"
+                                       min="0"
+                                       step="0.01"
+                                       @bind="_cashTendered"
+                                       @bind:event="oninput"
+                                       placeholder="@Tender.Outstanding.ToString("0.00")" />
+                                <button class="btn btn--small"
+                                        @onclick="AddCash"
+                                        disabled="@(!_ready)">
+                                    Add cash
+                                </button>
+                            </div>
+
+                            <div class="pos-tender__field">
+                                <label for="voucher">Voucher / gift card</label>
+                                <input id="voucher"
+                                       class="pos-tender__input"
+                                       type="number"
+                                       min="0"
+                                       step="0.01"
+                                       @bind="_voucherAmount"
+                                       @bind:event="oninput"
+                                       placeholder="@Tender.Outstanding.ToString("0.00")" />
+                                <button class="btn btn--small"
+                                        @onclick="() => AddVoucher(TenderType.GiftCard)"
+                                        disabled="@(!_ready)">
+                                    Add gift card
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="pos-actions">
+                    @{ var basketEmpty = Cart?.IsEmpty ?? true; }
+
+                    @* Both of these take exactly what is still owed, which is the common case:
+                       the whole balance on one method. Split tender is the exception, and is
+                       built up with the fields above. *@
+                    <button class="btn btn--primary btn--block"
+                            @onclick="() => SettleWithAsync(TenderType.Cash)"
+                            disabled="@(!_ready || basketEmpty || !Tender.IsSettled)">
+                        Complete sale
+                    </button>
+
+                    <button class="btn btn--secondary btn--block"
+                            @onclick="() => SettleWithAsync(TenderType.ExternalCard)"
+                            disabled="@(!_ready || basketEmpty)">
+                        @(Tender.IsEmpty
+                            ? "Pay the whole balance by card"
+                            : $"Pay the remaining {Format(Tender.Outstanding)} by card")
+                    </button>
+
+                    @if (!Tender.IsEmpty)
+                    {
+                        <button class="btn btn--ghost btn--block"
+                                @onclick="ClearTender"
+                                disabled="@(!_ready)">
+                            Clear payments
+                        </button>
+                    }
+
+                    <button class="btn btn--ghost btn--block"
+                            @onclick="OpenDrawerAsync"
+                            disabled="@(!_printerReady)">
+                        Open drawer
+                    </button>
+
+                    <button class="btn btn--ghost btn--block"
+                            @onclick="ClearCart"
+                            disabled="@(!_ready || basketEmpty)">
+                        Clear basket
+                    </button>
+
+                    <button class="btn btn--ghost btn--block"
+                            @onclick="SyncNowAsync"
+                            disabled="@(!_ready)">
+                        Sync now
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenDeviceSettings">
+                        Devices &amp; pairing
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenReports">
+                        Reports
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenRefunds">
+                        Refunds
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenCatalog">
+                        Catalog &amp; stock
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenTransfers">
+                        Stock transfers
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenDrawerPage">
+                        Cash drawer &amp; shift
+                    </button>
+
+                    <button class="btn btn--ghost btn--block" @onclick="OpenCustomerDisplay">
+                        Customer display
+                    </button>
+                </div>
+            }
+        </aside>
+    </div>
+
+    @* ------------------------------------------------------------------ last sale *@
+    @if (Session.LastSale is { } last)
+    {
+        <footer class="pos-lastsale">
+            <span>Last sale: <strong>@last.Sale.Number</strong></span>
+            <span>@Format(last.Sale.Total)</span>
+            <span>@last.Sale.Tenders.Count tender(s)</span>
+            <button class="btn btn--ghost btn--small" @onclick="ReprintLastAsync">Reprint</button>
+        </footer>
+    }
+</div>

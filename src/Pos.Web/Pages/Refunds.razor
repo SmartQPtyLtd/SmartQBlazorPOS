@@ -1,0 +1,230 @@
+@page "/refunds"
+@using Pos.Core.Domain
+@using Pos.Infrastructure.Checkout
+@using Pos.Infrastructure.Storage
+@using Pos.Web.Terminal
+@inject CheckoutSession Session
+@inject ILocalStore LocalStore
+@inject ReturnRecordingService Returns
+@inject TerminalPrinterProvider Printers
+@inject NavigationManager Nav
+@inject ILogger<Refunds> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Refunds — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Refunds</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Refunds</strong>
+            <span class="pos-status__code">@Session.Store?.Name</span>
+        </div>
+        <div class="pos-status__indicators">
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    @* ------------------------------------------------------------------- lookup *@
+    <section class="dev-card ref-lookup">
+        <h2>Find the sale</h2>
+
+        <p class="dev-hint">
+            Type the receipt number from the customer's slip. If the slip is lost, pick the sale
+            from the day's list below.
+        </p>
+
+        <div class="pos-scan">
+            <input @ref="_lookupInput"
+                   class="pos-scan__input"
+                   type="text"
+                   autocomplete="off"
+                   aria-label="Receipt number from the customer's slip"
+                   placeholder="Receipt number, e.g. CT01-20260325-0042"
+                   @bind="_lookupText"
+                   @onkeydown="OnLookupKeyDown" />
+
+            <button class="btn btn--primary" @onclick="LookupAsync" disabled="@_busy">
+                Find
+            </button>
+        </div>
+
+        @if (_recentSales.Count > 0)
+        {
+            <details class="ref-recent">
+                <summary>Or choose from @_recentSales.Count sale(s) today</summary>
+                <ul class="ref-recent__list">
+                    @foreach (var sale in _recentSales)
+                    {
+                        <li>
+                            <button class="ref-recent__item" @onclick="() => SelectSaleAsync(sale)">
+                                <span>@sale.Number</span>
+                                <span class="ref-recent__time">@Time(sale.CompletedAt)</span>
+                                <span class="ref-recent__total">@Money(sale.Total)</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
+    </section>
+
+    @if (_sale is not null && _state is not null)
+    {
+        @* --------------------------------------------------------------- the sale *@
+        <div class="dev-grid">
+
+            <section class="dev-card">
+                <h2>@_sale.Number</h2>
+
+                <dl class="dev-facts">
+                    <dt>Sold</dt>
+                    <dd>@Time(_sale.CompletedAt)</dd>
+
+                    <dt>Total paid</dt>
+                    <dd>@Money(_sale.Total)</dd>
+
+                    <dt>Paid by</dt>
+                    <dd>@string.Join(", ", _sale.Tenders.Select(t => t.Type))</dd>
+
+                    <dt>Already refunded</dt>
+                    <dd>@Money(_alreadyRefunded)</dd>
+                </dl>
+
+                @if (_alreadyRefunded > 0m)
+                {
+                    <p class="dev-hint">
+                        This sale has been refunded in part. Only what remains is listed.
+                    </p>
+                }
+            </section>
+
+            <section class="dev-card ref-lines">
+                <h2>Choose what is coming back</h2>
+
+                @if (_state.IsFullyReturned)
+                {
+                    <p class="dev-warn">
+                        Everything on this sale has already been refunded. There is nothing left to
+                        return.
+                    </p>
+                }
+                else
+                {
+                    <table class="pos-lines">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th class="num">Sold</th>
+                                <th class="num">Refundable</th>
+                                <th class="num">Return</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var line in _sale.Lines)
+                            {
+                                var refundable = _state.RefundableQuantity(ToDomainLine(line, Currency));
+                                var captured = line;
+
+                                <tr class="@(refundable <= 0m ? "ref-line--done" : null)">
+                                    <td>
+                                        <span class="pos-lines__name">@line.Name</span>
+                                        <span class="pos-lines__note">@Money(line.UnitPrice) each</span>
+                                    </td>
+                                    <td class="num">@Quantity(line.Quantity)</td>
+                                    <td class="num">@Quantity(refundable)</td>
+                                    <td class="num">
+                                        @if (refundable <= 0m)
+                                        {
+                                            <span class="ref-done">refunded</span>
+                                        }
+                                        else
+                                        {
+                                            <input class="pos-qty"
+                                                   type="number"
+                                                   min="0"
+                                                   max="@refundable"
+                                                   step="0.001"
+                                                   value="@ReturnQuantityFor(line.Barcode)"
+                                                   @onchange="e => OnQuantityChangedAsync(captured, e)" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                    <div class="dev-form">
+                        <label for="reason">Reason</label>
+                        <select id="reason" class="pos-scan__input dev-input" @bind="_reason">
+                            @foreach (var reason in Enum.GetValues<ReturnReason>())
+                            {
+                                <option value="@reason">@Describe(reason)</option>
+                            }
+                        </select>
+
+                        <label for="refundMethod">Refund by</label>
+                        <select id="refundMethod" class="pos-scan__input dev-input" @bind="_refundMethod">
+                            <option value="@TenderType.Cash">Cash</option>
+                            <option value="@TenderType.ExternalCard">Card</option>
+                        </select>
+
+                        <label for="note">Note (optional)</label>
+                        <input id="note" class="pos-scan__input dev-input" @bind="_note"
+                               placeholder="e.g. faulty seal" />
+                    </div>
+                }
+            </section>
+
+            <section class="dev-card">
+                <h2>Refund summary</h2>
+
+                @if (_refundLines.Count == 0)
+                {
+                    <p class="dev-hint">Nothing selected yet.</p>
+                }
+                else
+                {
+                    <dl class="dev-facts">
+                        @foreach (var line in _refundLines)
+                        {
+                            <dt>@Quantity(line.Quantity) x @line.Name</dt>
+                            <dd>@Money(line.LineRefund)</dd>
+                        }
+
+                        <dt><strong>Refund total</strong></dt>
+                        <dd><strong>@Money(_refundTotal)</strong></dd>
+
+                        <dt>Tax reversed</dt>
+                        <dd>@Money(_refundTax)</dd>
+                    </dl>
+
+                    @if (_tenderWarning is not null)
+                    {
+                        @* Surfaced before the refund is committed, not after. Paying cash for a
+                           card sale is a classic fraud route, so the operator must see it and
+                           choose deliberately. *@
+                        <p class="dev-warn">@_tenderWarning</p>
+                    }
+                }
+
+                <div class="dev-actions">
+                    <button class="btn btn--primary"
+                            @onclick="CompleteRefundAsync"
+                            disabled="@(_busy || _refundLines.Count == 0)">
+                        Refund and print slip
+                    </button>
+                    <button class="btn btn--ghost" @onclick="Reset" disabled="@_busy">
+                        Clear
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+</div>

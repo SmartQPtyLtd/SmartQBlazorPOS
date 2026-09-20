@@ -1,0 +1,458 @@
+@page "/reports"
+@using System.Globalization
+@using Pos.Core.Reporting
+@using Pos.Devices.Reports
+@using Pos.Infrastructure.Checkout
+@using Pos.Infrastructure.Reporting
+@using Pos.Infrastructure.Storage
+@using Pos.Web.Terminal
+@inject CheckoutSession Session
+@inject ILocalStore LocalStore
+@inject TerminalPrinterProvider Printers
+@inject NavigationManager Nav
+@inject ILogger<Reports> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Reports — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Reports</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Reports</strong>
+            <span class="pos-status__code">@Session.Store?.Name</span>
+        </div>
+        <div class="pos-status__indicators">
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    <div class="dev-grid">
+
+        <section class="dev-card">
+            <h2>Which report</h2>
+
+            <div class="dev-actions">
+                <button class="btn @(_periodMode ? null : "btn--primary")"
+                        @onclick="() => _periodMode = false" disabled="@_busy">
+                    One day
+                </button>
+                <button class="btn @(_periodMode ? "btn--primary" : null)"
+                        @onclick="() => _periodMode = true" disabled="@_busy">
+                    A period
+                </button>
+            </div>
+
+            <p class="dev-hint">
+                A single day answers "how did we do today". A period answers the question actually
+                asked on a Monday morning.
+            </p>
+        </section>
+
+        @if (!_periodMode)
+        {
+        <section class="dev-card">
+            <h2>Trading day</h2>
+
+            <div class="dev-form">
+                <label for="date">Business date</label>
+                <input id="date" class="pos-scan__input dev-input" type="date"
+                       value="@_date.ToString("yyyy-MM-dd")"
+                       @onchange="OnDateChanged" />
+
+                <label for="top">Products to list</label>
+                <input id="top" class="pos-scan__input dev-input" type="number" min="1" max="50"
+                       @bind="_topProductCount" @bind:event="oninput" />
+            </div>
+
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="RefreshAsync" disabled="@_busy">
+                    Build report
+                </button>
+                <button class="btn" @onclick="() => PrintAsync(isFinal: false)" disabled="@(_busy || _report is null)">
+                    Print X-report
+                </button>
+                <button class="btn btn--secondary" @onclick="() => PrintAsync(isFinal: true)" disabled="@(_busy || _report is null)">
+                    Print Z-report (close day)
+                </button>
+            </div>
+
+            <p class="dev-hint">
+                An X-report is a mid-shift reading and leaves the day open. A Z-report closes the
+                day and should be filed with the takings.
+            </p>
+        </section>
+        }
+        else
+        {
+        <section class="dev-card">
+            <h2>Period</h2>
+
+            <div class="dev-form">
+                <label for="from">From</label>
+                <input id="from" class="pos-scan__input dev-input" type="date"
+                       value="@_periodFrom.ToString("yyyy-MM-dd")"
+                       @onchange="OnPeriodFromChanged" />
+
+                <label for="to">To</label>
+                <input id="to" class="pos-scan__input dev-input" type="date"
+                       value="@_periodTo.ToString("yyyy-MM-dd")"
+                       @onchange="OnPeriodToChanged" />
+
+                <label for="topPeriod">Products to list</label>
+                <input id="topPeriod" class="pos-scan__input dev-input" type="number" min="1" max="50"
+                       @bind="_topProductCount" @bind:event="oninput" />
+            </div>
+
+            <div class="dev-actions">
+                @foreach (var preset in PeriodPresets)
+                {
+                    var captured = preset.Days;
+
+                    <button class="btn btn--small" @onclick="() => UsePresetAsync(captured)"
+                            disabled="@_busy">
+                        @preset.Label
+                    </button>
+                }
+
+                <button class="btn btn--primary" @onclick="RefreshPeriodAsync" disabled="@_busy">
+                    Build report
+                </button>
+            </div>
+
+            <p class="dev-hint">
+                Days with no trading are listed rather than skipped, so a week that was mostly shut
+                does not read as a week that traded every day for less money.
+            </p>
+        </section>
+        }
+
+        @if (!_periodMode && _report is { } report)
+        {
+            <section class="dev-card">
+                <h2>Takings</h2>
+
+                @if (report.IsEmpty)
+                {
+                    <p class="dev-warn">No trading was recorded for this date.</p>
+                }
+
+                <dl class="dev-facts">
+                    <dt>Sales</dt>
+                    <dd>@report.SaleCount</dd>
+
+                    <dt>Gross</dt>
+                    <dd>@Money(report.Gross)</dd>
+
+                    <dt>Net of tax</dt>
+                    <dd>@Money(report.Net)</dd>
+
+                    <dt>Tax collected</dt>
+                    <dd>@Money(report.Tax)</dd>
+
+                    <dt>Discounts given</dt>
+                    <dd>@Money(report.Discounts)</dd>
+
+                    <dt>Average sale</dt>
+                    <dd>@Money(report.AverageSale)</dd>
+                </dl>
+
+                @if (report.VoidCount > 0)
+                {
+                    @* Voids are shown separately rather than netted off: a single netted figure
+                       hides them, and voids are the number that most needs watching. *@
+                    <p class="dev-warn">
+                        <strong>@report.VoidCount void(s)</strong> totalling @Money(report.VoidedValue).
+                        These are excluded from the takings above.
+                    </p>
+                }
+            </section>
+
+            <section class="dev-card">
+                <h2>Tendered</h2>
+
+                @if (report.TenderedByType.Count == 0)
+                {
+                    <p class="dev-hint">Nothing was tendered.</p>
+                }
+                else
+                {
+                    <dl class="dev-facts">
+                        @foreach (var (type, amount) in report.TenderedByType.OrderBy(t => t.Key, StringComparer.Ordinal))
+                        {
+                            <dt>@type</dt>
+                            <dd>@Money(amount)</dd>
+                        }
+
+                        <dt><strong>Total to count</strong></dt>
+                        <dd><strong>@Money(report.TenderedTotal)</strong></dd>
+                    </dl>
+                }
+            </section>
+
+            @if (report.TopProducts.Count > 0)
+            {
+                <section class="dev-card">
+                    <h2>Top @report.TopProducts.Count sellers</h2>
+
+                    <table class="pos-lines">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th class="num">Qty</th>
+                                <th class="num">Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var product in report.TopProducts)
+                            {
+                                <tr>
+                                    <td>@product.Name</td>
+                                    <td class="num">@Quantity(product.QuantitySold)</td>
+                                    <td class="num">@Money(product.Gross)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+
+            @* Per rate rather than one total. A single tax figure reconciles the drawer and cannot
+               fill in a return: a shop selling both standard-rated and zero-rated goods cannot
+               recover the split from the gross number. *@
+            @if (report.TaxBreakdown.Count > 0)
+            {
+                <section class="dev-card">
+                    <h2>Tax summary</h2>
+
+                    <table class="pos-lines">
+                        <thead>
+                            <tr>
+                                <th>Rate</th>
+                                <th class="num">Net</th>
+                                <th class="num">Tax</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var component in report.TaxBreakdown)
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="pos-lines__name">@component.Rate.Name</span>
+                                        <span class="pos-lines__note">
+                                            @(component.Rate.Rate.ToString("P0", CultureInfo.InvariantCulture))
+                                        </span>
+                                    </td>
+                                    <td class="num">@Money(component.Net)</td>
+                                    <td class="num">@Money(component.Tax)</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="sh-total">
+                                <th scope="row">Total</th>
+                                <td class="num">@Money(report.TaxBreakdown.Sum(c => c.Net))</td>
+                                <td class="num">@Money(report.TaxBreakdown.Sum(c => c.Tax))</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    @if (report.RefundTax > 0m)
+                    {
+                        <p class="dev-hint">
+                            Refunds reversed @Money(report.RefundTax) of tax, reported separately
+                            rather than netted off: one is owed onward and the other is reclaimed.
+                        </p>
+                    }
+                </section>
+            }
+
+            @* Who was on the till. A shift report answers that from the roster; this answers it from
+               the sales themselves, so a day with an unsigned terminal still shows as such rather
+               than disappearing. *@
+            @if (report.ByOperator.Count > 0)
+            {
+                <section class="dev-card">
+                    <h2>By operator</h2>
+
+                    <table class="pos-lines">
+                        <thead>
+                            <tr>
+                                <th>Operator</th>
+                                <th class="num">Sales</th>
+                                <th class="num">Taken</th>
+                                <th class="num">Discount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in report.ByOperator)
+                            {
+                                <tr>
+                                    <td>@OperatorName(entry.EmployeeId)</td>
+                                    <td class="num">@entry.SaleCount</td>
+                                    <td class="num">@Money(entry.Gross)</td>
+                                    <td class="num">@Money(entry.Discounts)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+
+            @if (report.Hourly.Count > 0)
+            {
+                <section class="dev-card">
+                    <h2>By hour</h2>
+
+                    @* The bar width is relative to the busiest hour, so the shape of the day is
+                       readable at a glance rather than only as a column of figures. *@
+                    @{ var peak = report.Hourly.Max(h => h.Gross); }
+
+                    <ul class="rep-hours">
+                        @foreach (var hour in report.Hourly)
+                        {
+                            var percent = peak <= 0m ? 0d : (double)(hour.Gross / peak) * 100d;
+                            <li class="rep-hour">
+                                <span class="rep-hour__label">@hour.Hour.ToString("D2"):00</span>
+                                <span class="rep-hour__bar" style="--fill: @($"{percent:0.#}")%"></span>
+                                <span class="rep-hour__value">@Money(hour.Gross)</span>
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
+        }
+
+        @if (_periodMode && _period is { } period)
+        {
+            <section class="dev-card">
+                <h2>@period.From.ToString("dd MMM") &ndash; @period.To.ToString("dd MMM yyyy")</h2>
+
+                @if (period.TradingDayCount == 0)
+                {
+                    <p class="dev-warn">Nothing was recorded in this period.</p>
+                }
+
+                <dl class="dev-facts">
+                    <dt>Sales</dt>
+                    <dd>@period.SaleCount</dd>
+
+                    <dt>Gross</dt>
+                    <dd>@Money(period.Gross)</dd>
+
+                    <dt>Refunds</dt>
+                    <dd>@Money(period.RefundTotal) (@period.RefundCount)</dd>
+
+                    <dt><strong>Net takings</strong></dt>
+                    <dd><strong>@Money(period.NetTakings)</strong></dd>
+
+                    <dt>Tax collected</dt>
+                    <dd>@Money(period.Tax)</dd>
+
+                    @* Two averages, because they answer different questions and confusing them is
+                       how a shop talks itself into a bad lease. *@
+                    <dt>Average per trading day</dt>
+                    <dd>@Money(period.AveragePerTradingDay)</dd>
+
+                    <dt>Average per calendar day</dt>
+                    <dd>@Money(period.AveragePerCalendarDay)</dd>
+
+                    <dt>Trading days</dt>
+                    <dd>@period.TradingDayCount of @period.CalendarDayCount</dd>
+
+                    @if (period.BestDay is { } best)
+                    {
+                        <dt>Best day</dt>
+                        <dd>@DayOf(best) &mdash; @Money(best.NetTakings)</dd>
+                    }
+                </dl>
+
+                @if (period.Previous is { } previous)
+                {
+                    <p class="rep-change @ChangeClass(period.ChangePercent)">
+                        <strong>@DescribeChange(period.ChangePercent)</strong>
+                        <span class="rep-change__detail">
+                            against @previous.From.ToString("dd MMM") &ndash; @previous.To.ToString("dd MMM"),
+                            which took @Money(previous.NetTakings) over @previous.SaleCount sale(s).
+                        </span>
+                    </p>
+                }
+            </section>
+
+            <section class="dev-card">
+                <h2>Day by day</h2>
+
+                <table class="pos-lines">
+                    <thead>
+                        <tr>
+                            <th>Day</th>
+                            <th class="num">Sales</th>
+                            <th class="num">Gross</th>
+                            <th class="num">Refunds</th>
+                            <th class="num">Net</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var day in period.Days)
+                        {
+                            @* An idle day is shown, not skipped: a gap in the figures is the
+                               difference between a shop that was shut and a shop that traded
+                               badly. *@
+                            <tr class="@(day.IsIdle ? "rep-day--idle" : null)">
+                                <td>@DayOf(day)</td>
+                                <td class="num">@day.SaleCount</td>
+                                <td class="num">@Money(day.Gross)</td>
+                                <td class="num">
+                                    @if (day.RefundTotal > 0m)
+                                    {
+                                        @Money(day.RefundTotal)
+                                    }
+                                    else
+                                    {
+                                        <span class="rep-none">&mdash;</span>
+                                    }
+                                </td>
+                                <td class="num">@Money(day.NetTakings)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @if (period.TopProducts.Count > 0)
+            {
+                <section class="dev-card">
+                    <h2>Top @period.TopProducts.Count sellers</h2>
+
+                    <p class="dev-hint">Across the whole period, not per day.</p>
+
+                    <table class="pos-lines">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th class="num">Qty</th>
+                                <th class="num">Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var product in period.TopProducts)
+                            {
+                                <tr>
+                                    <td>@product.Name</td>
+                                    <td class="num">@Quantity(product.QuantitySold)</td>
+                                    <td class="num">@Money(product.Gross)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+    </div>
+</div>

@@ -1,0 +1,32 @@
+<Project>
+
+  <!--
+    Shared build settings. Deliberately conservative: a POS must fail loudly in
+    CI, not silently at the till. Style rules stay at suggestion level for now
+    so the initial scaffold never blocks a build on formatting noise.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Product identity and authorship. These flow into every assembly's metadata
+    (Company, Product, Copyright) and into any NuGet packages produced.
+    SmartQ Blazor POS is dual-licensed: AGPL-3.0, or a commercial licence from
+    SmartQ (Pty) Ltd — see LICENSE.md and LICENSING.md at the repo root.
+  -->
+  <PropertyGroup>
+    <Authors>SmartQ (Pty) Ltd</Authors>
+    <Company>SmartQ (Pty) Ltd</Company>
+    <Product>SmartQ Blazor POS</Product>
+    <Copyright>Copyright © 2026 SmartQ (Pty) Ltd. All rights reserved.</Copyright>
+    <PackageProjectUrl>https://github.com/JawzoD3TH/smartq-blazor-pos</PackageProjectUrl>
+  </PropertyGroup>
+
+</Project>

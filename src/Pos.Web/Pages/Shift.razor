@@ -1,0 +1,301 @@
+@page "/shift"
+@using Pos.Core.Domain
+@using Pos.Core.Reporting
+@using Pos.Devices.EscPos
+@using Pos.Infrastructure.Checkout
+@using Pos.Infrastructure.Storage
+@using Pos.Web.Terminal
+@inject CheckoutSession Session
+@inject ShiftService Shifts
+@inject IShiftStore Roster
+@inject OperatorSignInMarker SignInMarker
+@inject TerminalPrinterProvider Printers
+@inject NavigationManager Nav
+@inject ILogger<Shift> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Cash drawer — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Cash drawer and shift</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Cash drawer</strong>
+            <span class="pos-status__code">@Session.Store?.Name</span>
+        </div>
+        <div class="pos-status__indicators">
+            @if (Session.Employee is { } operatorNow)
+            {
+                <span class="pos-status__pill">@operatorNow.Name</span>
+            }
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    @if (!Session.IsSignedIn && _closed is null)
+    {
+        <div class="pos-empty" style="margin: 1rem;">
+            <p>No operator is signed in, so no drawer is open.</p>
+            <p class="pos-empty__hint">
+                Cash can only be accounted for against a person and a shift.
+            </p>
+            <button class="btn btn--primary" @onclick="GoToSignIn">Sign in</button>
+        </div>
+    }
+    else
+    {
+        <section class="dev-card sh-card">
+            <div class="sh-headline">
+                <div>
+                    @* After a close the operator is signed out too, so the name and the drawer
+                       details come from the shift that was just closed. *@
+                    <h2>@(Session.Employee?.Name ?? _closedShift?.EmployeeName ?? "Shift closed")</h2>
+                    <p class="dev-hint">
+                        Drawer opened @When(DisplayedShift?.OpenedAt) with a float of
+                        @Money(DisplayedShift?.OpeningFloat ?? 0m).
+                    </p>
+                </div>
+                <div class="sh-headline__actions">
+                    <button class="btn" @onclick="RefreshAsync" disabled="@_busy">Refresh</button>
+                    <button class="btn" @onclick="ReadAsync" disabled="@_busy">Print X reading</button>
+                </div>
+            </div>
+        </section>
+
+        <div class="dev-grid">
+
+            @* ---------------------------------------------------------------- activity *@
+            <section class="dev-card">
+                <h2>Activity so far</h2>
+
+                @if (_totals is not { } totals)
+                {
+                    <p class="dev-hint">Loading&hellip;</p>
+                }
+                else
+                {
+                    <table class="sh-table">
+                        <tbody>
+                            @* These are label/value pairs, so the label is the row header and the
+                               figure is its only cell. Without the <th> a screen reader reads the
+                               session out as a bare list of numbers. *@
+                            <tr>
+                                <th scope="row">Sales</th>
+                                <td class="num">@totals.SaleCount</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Gross takings</th>
+                                <td class="num">@Money(totals.GrossTakings)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Cash taken</th>
+                                <td class="num">@Money(totals.CashTakings)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Card and other</th>
+                                <td class="num">@Money(totals.NonCashTakings)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Refunds</th>
+                                <td class="num">@Money(totals.RefundTotal)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Voids</th>
+                                <td class="num">@totals.VoidCount</td>
+                            </tr>
+                            <tr class="@(totals.NoSaleCount > 0 ? "sh-warn" : null)">
+                                <th scope="row">No-sale openings</th>
+                                <td class="num">@totals.NoSaleCount</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    @* The expected drawer figure is deliberately absent, and the screen says so
+                       rather than leaving the omission to look like a fault. Counting cash with
+                       the answer already on screen is not a count. *@
+                    <p class="dev-hint">
+                        The expected drawer total is withheld until a count has been entered.
+                    </p>
+                }
+            </section>
+
+            @* ------------------------------------------------------------ drawer ops *@
+            <section class="dev-card">
+                <h2>Drawer</h2>
+
+                @if (!CanOpenDrawer)
+                {
+                    <p class="dev-hint">
+                        @(Session.Employee is null
+                            ? "The shift is closed and the operator has signed out. Sign in to open a new drawer."
+                            : $"{Session.Employee.Name} is not authorised to open the drawer. A supervisor can do this from their own sign-in.")
+                    </p>
+                }
+                else
+                {
+                    <div class="dev-form">
+                        <label for="activity">Action</label>
+                        <select id="activity" class="pos-scan__input dev-input" @bind="_activityKind">
+                            <option value="nosale">Open drawer (no sale)</option>
+                            <option value="in">Cash in</option>
+                            <option value="out">Cash out</option>
+                        </select>
+
+                        @if (_activityKind != "nosale")
+                        {
+                            <label for="amount">Amount</label>
+                            <input id="amount" class="pos-scan__input dev-input" type="number"
+                                   step="0.01" min="0.01" @bind="_activityAmount" />
+                        }
+
+                        <label for="activityReason">Reason</label>
+                        <input id="activityReason" class="pos-scan__input dev-input"
+                               @bind="_activityReason" placeholder="@ActivityReasonPlaceholder" />
+                    </div>
+
+                    <div class="dev-actions">
+                        <button class="btn btn--primary" @onclick="RecordActivityAsync" disabled="@_busy">
+                            @(_activityKind == "nosale" ? "Open drawer" : "Record movement")
+                        </button>
+                    </div>
+
+                    <p class="dev-hint">
+                        Every opening is recorded and never reset. A no-sale opening is the classic
+                        cover for a small theft, so it needs a reason and a name against it.
+                    </p>
+                }
+
+                @if (_events.Count > 0)
+                {
+                    <table class="pos-lines cat-history">
+                        <thead>
+                            <tr>
+                                <th scope="col">When</th>
+                                <th scope="col">What</th>
+                                <th scope="col" class="num">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var drawerEvent in _events)
+                            {
+                                <tr>
+                                    <td>@When(drawerEvent.OccurredAt)</td>
+                                    <td>
+                                        <span>@Describe(drawerEvent)</span>
+                                        @if (!string.IsNullOrWhiteSpace(drawerEvent.Reason))
+                                        {
+                                            <span class="pos-lines__note">@drawerEvent.Reason</span>
+                                        }
+                                    </td>
+                                    <td class="num">@Money(drawerEvent.Amount)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            @* --------------------------------------------------------------- closing *@
+            <section class="dev-card">
+                <h2>Close the shift</h2>
+
+                @if (_closed is { } closed)
+                {
+                    @* Shown only after the count was submitted, never before it. *@
+                    <table class="sh-table sh-table--cashup">
+                        <tbody>
+                            <tr>
+                                <th scope="row">Opening float</th>
+                                <td class="num">@Money(closed.OpeningFloat)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Cash taken</th>
+                                <td class="num">@Money(closed.CashTakings)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Cash refunds</th>
+                                <td class="num">@Money(closed.CashRefunds)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Cash in</th>
+                                <td class="num">@Money(closed.CashIn)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Cash out</th>
+                                <td class="num">@Money(closed.CashOut)</td>
+                            </tr>
+                            <tr class="sh-total">
+                                <th scope="row">Expected</th>
+                                <td class="num">@Money(closed.ExpectedCash)</td>
+                            </tr>
+                            <tr class="sh-total">
+                                <th scope="row">Counted</th>
+                                <td class="num">@Money(closed.ClosingCount ?? 0m)</td>
+                            </tr>
+                            <tr class="@VarianceClass(closed)">
+                                <th scope="row">@VarianceLabel(closed)</th>
+                                <td class="num">@Money(Math.Abs(closed.Variance ?? 0m))</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="dev-actions">
+                        <button class="btn" @onclick="PrintSlipAsync" disabled="@_busy">
+                            Print Z-report
+                        </button>
+                        <button class="btn btn--primary" @onclick="BackToCheckout">Done</button>
+                    </div>
+                }
+                else if (!CanCloseShift)
+                {
+                    @* Told before the count, not after it. An operator who is going to be refused
+                       should not spend five minutes counting a drawer first. *@
+                    <p class="dev-hint">
+                        @Session.Employee?.Name is not authorised to close the shift. A supervisor
+                        counts the drawer and signs it off.
+                    </p>
+                }
+                else
+                {
+                    <div class="dev-form">
+                        <label for="count">
+                            Cash counted in the drawer
+                        </label>
+                        <input id="count" class="pos-scan__input dev-input" type="number"
+                               step="0.01" min="0" @bind="_closingCount" />
+
+                        <label for="endReason">Why the shift is ending</label>
+                        <select id="endReason" class="pos-scan__input dev-input" @bind="_endReason">
+                            <option value="Handover">Handing over to another operator</option>
+                            <option value="DayClose">End of the trading day</option>
+                            <option value="SignedOff">Signed off — operator went home</option>
+                            <option value="EndedBySupervisor">Ended by a supervisor</option>
+                        </select>
+
+                        <label for="note">Note (optional)</label>
+                        <input id="note" class="pos-scan__input dev-input" @bind="_closeNote"
+                               placeholder="e.g. explaining a discrepancy" />
+                    </div>
+
+                    <div class="dev-actions">
+                        <button class="btn btn--primary" @onclick="CloseAsync" disabled="@_busy">
+                            Count and close
+                        </button>
+                    </div>
+
+                    <p class="dev-hint">
+                        Count the cash first. The expected figure is not shown until you submit, so
+                        that the count is what is in the drawer rather than what the till says
+                        should be.
+                    </p>
+                }
+            </section>
+        </div>
+    }
+</div>

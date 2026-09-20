@@ -1,0 +1,7 @@
+# Test projects follow the xUnit naming convention, where a long descriptive
+# sentence with underscores is the community standard ("A_line_discount_reduces_
+# the_taxable_amount"). CA1707 exists to stop underscores leaking into public API
+# surface, which does not apply to test method names. Scoped to tests only —
+# production code still has to satisfy the rule.
+[*.cs]
+dotnet_diagnostic.CA1707.severity = none

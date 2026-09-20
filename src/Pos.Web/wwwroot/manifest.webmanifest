@@ -1,0 +1,37 @@
+{
+  "id": "./",
+  "name": "SmartQ Blazor POS",
+  "short_name": "SmartQ Blazor POS",
+  "description": "An offline-first point of sale for a shop: sell, refund, take payment, count the drawer, and move stock between branches. Keeps trading with no network and syncs when it returns.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "prefer_related_applications": false,
+  "categories": ["business", "productivity", "shopping"],
+
+  "background_color": "#10151c",
+  "theme_color": "#10151c",
+
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ]
+}

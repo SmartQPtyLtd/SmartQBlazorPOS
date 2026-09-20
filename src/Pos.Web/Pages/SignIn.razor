@@ -1,0 +1,170 @@
+@page "/signin"
+@using Pos.Infrastructure.Checkout
+@using Pos.Infrastructure.Storage
+@using Pos.Web.Terminal
+@inject CheckoutSession Session
+@inject IShiftStore Roster
+@inject ShiftService Shifts
+@inject OperatorSignInMarker SignInMarker
+@inject TerminalStartup Startup
+@inject NavigationManager Nav
+@inject ILogger<SignIn> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Sign in — SmartQ Blazor POS</PageTitle>
+
+<div class="pos-shell">
+
+
+    @* The document heading. Off-screen because the status bar below already says the same
+       thing in the same place; this is the copy a screen reader navigates by. *@
+    <h1 class="pos-visually-hidden">Sign in</h1>
+    <header class="pos-status">
+        <div class="pos-status__store">
+            <strong>Sign in</strong>
+            <span class="pos-status__code">@Session.Store?.Name</span>
+        </div>
+        <div class="pos-status__indicators">
+            <button class="btn btn--small" @onclick="BackToCheckout">Back to checkout</button>
+        </div>
+    </header>
+
+    <StatusMessage Message="@_message" IsError="@_messageIsError" />
+
+    @if (Session.IsSignedIn)
+    {
+        <section class="dev-card sh-card">
+            <h2>@Session.Employee?.Name is signed in</h2>
+            <p class="dev-hint">
+                Shift opened @When(Session.Shift?.OpenedAt) with a float of
+                @Money(Session.Shift?.OpeningFloat ?? 0m).
+            </p>
+            <div class="dev-actions">
+                <button class="btn btn--primary" @onclick="GoToDrawer">Cash drawer</button>
+                <button class="btn" @onclick="BackToCheckout">Back to checkout</button>
+                <button class="btn btn--ghost" @onclick="SignOut">Sign out</button>
+            </div>
+        </section>
+    }
+    else if (_employees.Count == 0)
+    {
+        <div class="pos-empty" style="margin: 1rem;">
+            <p>No operators are set up on this terminal.</p>
+            <p class="pos-empty__hint">
+                A roster arrives from head office. Until one has synced, nobody can be held
+                accountable for the cash in the drawer.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="si-layout">
+
+            <section class="dev-card">
+                <h2>Who is on the till?</h2>
+
+                <div class="si-roster">
+                    @foreach (var employee in _employees)
+                    {
+                        var captured = employee;
+
+                        <button class="si-person @(IsChosen(employee) ? "si-person--chosen" : null)"
+                                @onclick="() => Choose(employee)"
+                                disabled="@_busy">
+                            <span class="si-person__initials">@Initials(employee)</span>
+                            <span class="si-person__name">@employee.Name</span>
+                            <span class="si-person__role">@Role(employee)</span>
+                        </button>
+                    }
+                </div>
+            </section>
+
+            <section class="dev-card">
+                @if (_chosen is null)
+                {
+                    <h2>Enter a PIN</h2>
+                    <p class="dev-hint">Choose an operator first.</p>
+                }
+                else
+                {
+                    <h2>@_chosen.Name</h2>
+
+                    @* The digits are shown rather than masked. The person has already identified
+                       themselves and is typing on a till in front of customers, so masking only
+                       adds a way to mistype the PIN without adding any secrecy. *@
+                    @* The live region holds text, not only the dots. The dots say how far along the
+                       PIN is through CSS classes and an empty element has nothing to announce, so
+                       without this an operator who cannot see the pad gets no feedback at all. The
+                       count is silent at nought digits: content that is present from the first
+                       render is never announced, and the starting state is already the default. *@
+                    <div class="si-pin" aria-live="polite" aria-label="PIN entry">
+                        @for (var i = 0; i < 4; i++)
+                        {
+                            <span class="si-pin__dot @(i < _pin.Length ? "si-pin__dot--filled" : null)"></span>
+                        }
+                        <span class="pos-visually-hidden">@PinProgress()</span>
+                    </div>
+
+                    <div class="si-pad">
+                        @foreach (var digit in Digits)
+                        {
+                            var captured = digit;
+
+                            <button class="si-pad__key" @onclick="() => Press(captured)" disabled="@_busy">
+                                @captured
+                            </button>
+                        }
+
+                        <button class="si-pad__key si-pad__key--wide" @onclick="Clear" disabled="@_busy">
+                            Clear
+                        </button>
+                        <button class="si-pad__key" @onclick="Backspace" disabled="@_busy"
+                                aria-label="Delete last digit">
+                            &#9003;
+                        </button>
+                    </div>
+
+                    @if (NeedsOpeningFloat)
+                    {
+                        <div class="dev-form si-float">
+                            <label for="float">Opening float — cash counted into the drawer</label>
+                            <input id="float" class="pos-scan__input dev-input" type="number"
+                                   step="0.01" min="0" @bind="_openingFloat" />
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="dev-hint">
+                            A shift is already running on this terminal, so signing in joins it
+                            rather than opening a second drawer.
+                        </p>
+                    }
+
+                    @if (_needsSupervision)
+                    {
+                        <p class="dev-hint">
+                            @_chosen.Name works under supervision. A supervisor will need to approve
+                            refunds, voids, and discounts.
+                        </p>
+                    }
+
+                    <div class="dev-actions">
+                        <button class="btn btn--primary" @onclick="SignInAsync"
+                                disabled="@(_busy || _pin.Length < MinPinLength)">
+                            Sign in
+                        </button>
+                        <button class="btn btn--ghost" @onclick="Clear" disabled="@_busy">Cancel</button>
+                    </div>
+                }
+            </section>
+        </div>
+
+        @if (_showDemoPins)
+        {
+            <p class="dev-hint si-demo">
+                Demo roster &mdash; Thandi 4821 &middot; Sipho 7395 &middot; Anele 9152. Seeded so a
+                fresh terminal can be used at all; replaced by the first roster sync.
+            </p>
+        }
+    }
+</div>

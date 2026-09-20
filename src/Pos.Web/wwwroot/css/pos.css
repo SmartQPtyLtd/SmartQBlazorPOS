@@ -1,0 +1,572 @@
+/* pos.css — the till screen.
+ *
+ * Deliberately high-contrast and large-target: this is read at arm's length, often under
+ * bad lighting, by someone who is also handling goods and talking to a customer. Every
+ * interactive target is sized for a finger or a stylus, not a mouse. */
+
+/* The app keeps its own --pos-* token names, but every value is now an alias of a
+   neon-skeleton :root token (css/neon-skeleton.css, loaded first). The whole till —
+   and every stylesheet that reads --pos-* — therefore re-themes from the library. */
+:root {
+    --pos-bg: var(--background);
+    --pos-surface: var(--surface);
+    --pos-surface-2: var(--surface-2);
+    --pos-border: var(--bezel);
+    --pos-text: var(--text);
+    --pos-muted: var(--text-muted);
+    --pos-ok: var(--tertiary);
+    --pos-warn: var(--warning);
+    --pos-danger: var(--danger);
+    --pos-accent: var(--neon);
+    --pos-radius: var(--radius);
+}
+
+/* ----------------------------------------------------- neon-skeleton integration
+ *
+ * The library's global element rules are written for prose documents: every button gets a
+ * right and bottom margin, a fixed 38px height, uppercase text with wide tracking; every
+ * input a bottom margin; list items a 1rem gap; tables and paragraphs a large bottom
+ * margin; and display-scale headings. Inside the app shell these elements are laid out by
+ * flex and grid with their own gaps, so the document-flow spacing and marketing typography
+ * are switched off here. The library's colours, borders, focus glows, and font stack are
+ * kept — that is the point of loading it.
+ */
+.pos-shell button {
+    margin: 0;
+    height: auto;
+    line-height: normal;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: normal;
+}
+
+.pos-shell input,
+.pos-shell select,
+.pos-shell textarea {
+    margin: 0;
+    height: auto;
+    font-size: inherit;
+}
+
+.pos-shell li {
+    margin-bottom: 0;
+}
+
+.pos-shell table {
+    margin-bottom: 0;
+}
+
+.pos-shell p {
+    margin-bottom: 1rem;
+}
+
+.pos-shell h1,
+.pos-shell h2,
+.pos-shell h3,
+.pos-shell h4,
+.pos-shell h5,
+.pos-shell h6 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+
+/* The library flattens <strong> to weight 400 with a neon glow. The glow stays — it is the
+   theme — but totals and balances keep their weight: it is how the operator scans them. */
+.pos-shell strong {
+    font-weight: 700;
+}
+
+.pos-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    background: var(--pos-bg);
+    color: var(--pos-text);
+    font-size: 16px;
+}
+
+/* ------------------------------------------------------------------- status bar */
+
+.pos-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    background: var(--pos-surface);
+    border-bottom: 1px solid var(--pos-border);
+}
+
+.pos-status__store {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.pos-status__code {
+    color: var(--pos-muted);
+    font-size: 0.85rem;
+}
+
+.pos-status__indicators {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.badge {
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    border: 1px solid var(--pos-border);
+    background: var(--pos-surface-2);
+    color: var(--pos-muted);
+}
+
+.badge--ok {
+    border-color: var(--pos-ok);
+    color: var(--pos-ok);
+}
+
+.badge--warn {
+    border-color: var(--pos-warn);
+    color: var(--pos-warn);
+}
+
+.badge--danger {
+    border-color: var(--pos-danger);
+    color: var(--pos-danger);
+}
+
+/* --------------------------------------------------------------------- messages */
+
+/*
+    Off-screen, but present for anything that reads the page rather than looks at it.
+
+    Used for the page heading. Every screen already shows its name in the status bar, but as a
+    <strong> — so the document had no heading for a screen reader to navigate to, and the till screen
+    had no heading at all. Repeating the name in a real heading is honest: it is the same words, in the
+    place a reader looks for them. Styling the status bar as a heading instead would have been prettier
+    and would have changed how it looks, which is a cost this does not have.
+*/
+.pos-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+.pos-message {
+    padding: 0.75rem 1rem;
+    border-left: 4px solid var(--pos-accent);
+    background: var(--pos-surface-2);
+    margin: 0;
+}
+
+.pos-message--error {
+    border-left-color: var(--pos-danger);
+}
+
+.pos-message--info {
+    border-left-color: var(--pos-ok);
+}
+
+/* ------------------------------------------------------------------------- layout */
+
+.pos-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 1rem;
+    padding: 1rem;
+    align-items: start;
+    flex: 1;
+}
+
+@media (max-width: 900px) {
+    .pos-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* -------------------------------------------------------------------------- scan */
+
+.pos-scan {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.pos-scan__input {
+    flex: 1;
+    padding: 1rem;
+    font-size: 1.25rem;
+    border-radius: var(--pos-radius);
+    border: 2px solid var(--pos-border);
+    background: var(--pos-surface);
+    color: var(--pos-text);
+    min-height: 56px;
+}
+
+.pos-scan__input:focus {
+    outline: none;
+    border-color: var(--pos-accent);
+}
+
+/* ----------------------------------------------------------------------- matches */
+
+.pos-matches {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    overflow: hidden;
+}
+
+.pos-match {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.75rem;
+    align-items: center;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--pos-surface);
+    border: none;
+    border-bottom: 1px solid var(--pos-border);
+    color: var(--pos-text);
+    text-align: left;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.pos-match:hover,
+.pos-match:focus {
+    background: var(--pos-surface-2);
+}
+
+.pos-matches li:last-child .pos-match {
+    border-bottom: none;
+}
+
+.pos-match__barcode,
+.pos-match__price {
+    color: var(--pos-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------------ basket */
+
+.pos-empty {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--pos-muted);
+    border: 1px dashed var(--pos-border);
+    border-radius: var(--pos-radius);
+}
+
+.pos-empty__hint {
+    font-size: 0.9rem;
+}
+
+.pos-lines {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--pos-surface);
+    border-radius: var(--pos-radius);
+    overflow: hidden;
+}
+
+.pos-lines th,
+.pos-lines td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--pos-border);
+}
+
+.pos-lines th {
+    background: var(--pos-surface-2);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--pos-muted);
+}
+
+.pos-lines .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.pos-lines__name {
+    display: block;
+}
+
+.pos-lines__note {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--pos-warn);
+}
+
+.pos-qty {
+    width: 5.5rem;
+    padding: 0.5rem;
+    background: var(--pos-surface-2);
+    border: 1px solid var(--pos-border);
+    border-radius: 6px;
+    color: var(--pos-text);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------------ totals */
+
+.pos-side {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: sticky;
+    top: 1rem;
+}
+
+.pos-totals {
+    background: var(--pos-surface);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    padding: 1rem;
+}
+
+.pos-totals__row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.35rem 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.pos-totals__row--grand {
+    border-top: 2px solid var(--pos-border);
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    font-size: 1.75rem;
+    font-weight: 700;
+}
+
+.pos-totals__tax {
+    color: var(--pos-muted);
+    font-size: 0.85rem;
+    text-align: right;
+}
+
+.pos-tender {
+    background: var(--pos-surface);
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.pos-tender label {
+    font-size: 0.85rem;
+    color: var(--pos-muted);
+}
+
+.pos-tender__input {
+    padding: 0.75rem;
+    font-size: 1.25rem;
+    background: var(--pos-surface-2);
+    border: 1px solid var(--pos-border);
+    border-radius: 6px;
+    color: var(--pos-text);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.pos-tender__change {
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------- split tender */
+
+.pos-tender__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* What is still owed is the number the operator works from, so it is the largest thing here. */
+.pos-tender__row strong {
+    font-size: 1.4rem;
+}
+
+/* An open balance and a settled one must not look alike: the operator checks this before
+   completing, and a colour-blind-safe pair (weight and a word) matters more than hue alone. */
+.tender-open {
+    color: var(--pos-warn);
+    font-weight: 700;
+}
+
+.tender-settled {
+    color: var(--pos-ok);
+    font-weight: 700;
+}
+
+.pos-tender__row--change {
+    color: var(--pos-ok);
+}
+
+.tender-list {
+    list-style: none;
+    margin: 0.25rem 0;
+    padding: 0;
+    border: 1px solid var(--pos-border);
+    border-radius: var(--pos-radius);
+    overflow: hidden;
+}
+
+.tender-list__item {
+    display: grid;
+    /* What it was, how much, and the way out — the order an operator reads them in. */
+    grid-template-columns: minmax(0, 1fr) 5.5rem auto;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--pos-border);
+}
+
+.tender-list__item:last-child {
+    border-bottom: none;
+}
+
+.tender-list__amount {
+    text-align: right;
+    font-weight: 600;
+}
+
+.pos-tender__inputs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.pos-tender__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+/* ----------------------------------------------------------------------- buttons */
+
+.pos-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.btn {
+    padding: 0.9rem 1rem;
+    border-radius: var(--pos-radius);
+    border: 1px solid var(--pos-border);
+    background: var(--pos-surface-2);
+    color: var(--pos-text);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 52px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+/* The neon hover from the library's .button, applied to the till's own touch-sized buttons.
+   Explicit rules (rather than relying on the library's bare button:hover) so the filled
+   variants below keep their dark text on a lit background. */
+.btn:hover:not(:disabled),
+.btn:focus-visible {
+    border-color: var(--neon-dim);
+    box-shadow: var(--neon-glow);
+}
+
+.btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.btn--block {
+    width: 100%;
+}
+
+.btn--small {
+    min-height: 36px;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.85rem;
+}
+
+/* Filled neon cyan, dark text — the library's .button-primary treatment at till size. */
+.btn--primary {
+    background: var(--pos-accent);
+    border-color: var(--pos-accent);
+    color: #06121a;
+}
+
+.btn--primary:hover:not(:disabled),
+.btn--primary:focus-visible {
+    background: var(--neon-soft);
+    border-color: var(--neon-soft);
+    color: #06121a;
+}
+
+.btn--secondary {
+    background: var(--pos-ok);
+    border-color: var(--pos-ok);
+    color: #06100a;
+}
+
+.btn--secondary:hover:not(:disabled),
+.btn--secondary:focus-visible {
+    border-color: var(--pos-ok);
+    color: #06100a;
+    box-shadow: 0 0 12px rgba(57, 255, 20, 0.35);
+}
+
+.btn--danger {
+    border-color: var(--pos-danger);
+    color: var(--pos-danger);
+    background: transparent;
+}
+
+.btn--danger:hover:not(:disabled),
+.btn--danger:focus-visible {
+    border-color: var(--pos-danger);
+    color: var(--pos-danger);
+    box-shadow: 0 0 12px rgba(221, 34, 0, 0.45);
+}
+
+.btn--ghost {
+    background: transparent;
+}
+
+/* --------------------------------------------------------------------- last sale */
+
+.pos-lastsale {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    background: var(--pos-surface);
+    border-top: 1px solid var(--pos-border);
+    font-variant-numeric: tabular-nums;
+}

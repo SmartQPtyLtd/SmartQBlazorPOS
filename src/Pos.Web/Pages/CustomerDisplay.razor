@@ -1,0 +1,203 @@
+@page "/display"
+@using System.Text.Json
+@using Pos.Web.Terminal
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@*
+    Customer-facing display.
+
+    Opened in its own window, ideally on a second screen, and pointed at the customer. It is
+    deliberately readable from a metre away: large type, high contrast, and the running total
+    always visible.
+
+    It is strictly an output. It never sends anything back to the till, so closing it, or
+    leaving it on a machine that has crashed, cannot affect a sale.
+*@
+
+<PageTitle>Customer Display</PageTitle>
+
+<div class="cd-shell">
+    <header class="cd-header">
+        <h1>@_storeName</h1>
+        <span class="cd-connection @(_live ? "cd-connection--ok" : "cd-connection--stale")">
+            @(_live ? "Live" : "Waiting for the till…")
+        </span>
+    </header>
+
+    @if (_state.IsComplete)
+    {
+        <div class="cd-thanks">
+            <div class="cd-thanks__message">@_state.Message</div>
+            <div class="cd-thanks__total">@Format(_state.Total)</div>
+        </div>
+    }
+    else if (_state.Lines.Count == 0)
+    {
+        <div class="cd-welcome">
+            <div class="cd-welcome__message">@(_state.Message ?? "Welcome")</div>
+            <div class="cd-welcome__hint">Please place your items on the counter.</div>
+        </div>
+    }
+    else
+    {
+        <table class="cd-lines">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Price</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _state.Lines)
+                {
+                    <tr>
+                        <td>@line.Name</td>
+                        <td class="num">@line.Quantity</td>
+                        <td class="num">@Format(line.LineTotal)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <footer class="cd-total">
+            <span>Total</span>
+            <strong>@Format(_state.Total)</strong>
+        </footer>
+    }
+</div>
+
+@code {
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private CustomerDisplayState _state = CustomerDisplayState.Idle;
+    private string _storeName = "SmartQ Blazor POS";
+    private bool _live;
+
+    /// <summary>When anything last arrived from the till, heartbeat included.</summary>
+    private DateTimeOffset _lastMessageUtc = DateTimeOffset.UtcNow;
+
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<CustomerDisplay>? _self;
+    private Timer? _stalenessTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/customer-display.js");
+            _self = DotNetObjectReference.Create(this);
+
+            var subscribed = await _module.InvokeAsync<bool>("subscribe", _self);
+
+            if (!subscribed)
+            {
+                // No BroadcastChannel. The screen still renders, it simply never updates, and
+                // the header says so rather than looking like a working display showing zero.
+                return;
+            }
+
+            // A display that has silently stopped receiving updates looks identical to one
+            // with an empty basket, so staleness is tracked explicitly.
+            _stalenessTimer = new Timer(_ => MarkStale(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        }
+        catch (JSException)
+        {
+            // The display degrades to a static screen rather than failing to load.
+        }
+    }
+
+    /// <summary>Receives a basket update from the till.</summary>
+    /// <remarks>
+    /// Invoked from JavaScript, so the parameter is a JSON string deserialised here with the
+    /// same options the till serialised with.
+    /// </remarks>
+    [JSInvokable]
+    public void OnDisplayUpdate(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+
+            // A heartbeat carries no basket, only proof that the till is still there. It counts
+            // as a message for staleness, and the badge comes back the moment one arrives —
+            // before, the badge could only ever turn off, never back on.
+            if (document.RootElement.TryGetProperty("heartbeat", out _))
+            {
+                _lastMessageUtc = DateTimeOffset.UtcNow;
+
+                if (!_live)
+                {
+                    _live = true;
+                    _ = InvokeAsync(StateHasChanged);
+                }
+
+                return;
+            }
+
+            var state = JsonSerializer.Deserialize<CustomerDisplayState>(payload, Json);
+            if (state is null)
+            {
+                return;
+            }
+
+            _state = state;
+            _live = true;
+            _lastMessageUtc = DateTimeOffset.UtcNow;
+            _storeName = string.IsNullOrWhiteSpace(_storeName) ? "SmartQ Blazor POS" : _storeName;
+
+            _ = InvokeAsync(StateHasChanged);
+        }
+        catch (JsonException)
+        {
+            // A malformed message is ignored rather than blanking the display mid-sale.
+        }
+    }
+
+    private void MarkStale() => _ = InvokeAsync(() =>
+    {
+        // Stale means ten seconds of silence, not ten seconds since the page loaded. Before,
+        // the timer blanked the badge every ten seconds no matter how recently the till had
+        // spoken — including one heartbeat ago.
+        if (!_live || DateTimeOffset.UtcNow - _lastMessageUtc < TimeSpan.FromSeconds(10))
+        {
+            return;
+        }
+
+        _live = false;
+        StateHasChanged();
+    });
+
+    private static string Format(decimal amount) =>
+        amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        _stalenessTimer?.Dispose();
+
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("unsubscribe");
+                await _module.DisposeAsync();
+            }
+            catch (JSException)
+            {
+                // The page is going away; nothing useful to do.
+            }
+        }
+
+        _self?.Dispose();
+    }
+}
