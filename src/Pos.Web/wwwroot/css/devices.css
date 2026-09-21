@@ -430,6 +430,19 @@
     border-radius: 0 6px 6px 0;
 }
 
+/* AGPL source offer — quiet, but always visible */
+.si-source {
+    margin-top: auto;
+    padding: 0.75rem 1rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--pos-muted);
+}
+
+.si-source a {
+    color: var(--pos-accent);
+}
+
 /* -------------------------------------------------------------- drawer and shift */
 
 .sh-card {
