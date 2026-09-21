@@ -26,7 +26,7 @@
     <Company>SmartQ (Pty) Ltd</Company>
     <Product>SmartQ Blazor POS</Product>
     <Copyright>Copyright © 2026 SmartQ (Pty) Ltd. All rights reserved.</Copyright>
-    <PackageProjectUrl>https://github.com/JawzoD3TH/smartq-blazor-pos</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/SmartQPtyLtd/SmartQBlazorPOS</PackageProjectUrl>
   </PropertyGroup>
 
 </Project>

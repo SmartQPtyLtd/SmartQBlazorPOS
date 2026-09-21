@@ -47,8 +47,9 @@ being bound by the AGPL's copyleft and source-disclosure conditions:
 Commercial licenses are issued by SmartQ (Pty) Ltd on a per-customer or
 per-deployment basis. Contact:
 
-- **SmartQ (Pty) Ltd** — via the repository owner on GitHub
-  (https://github.com/JawzoD3TH) until a dedicated channel is published.
+- **SmartQ (Pty) Ltd** — via the repository on GitHub
+  (https://github.com/SmartQPtyLtd/SmartQBlazorPOS) until a dedicated channel
+  is published.
 
 When you purchase a commercial license, you receive the same codebase under
 proprietary terms that replace the AGPL for your licensed use.
