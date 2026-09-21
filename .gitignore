@@ -32,7 +32,3 @@ appsettings.*.local.json
 *.suo
 Thumbs.db
 .DS_Store
-
-## Local archives — full-repo zips are backups, not source
-POS.zip
-*.zip

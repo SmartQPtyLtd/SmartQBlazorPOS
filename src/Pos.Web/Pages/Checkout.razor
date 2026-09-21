@@ -304,7 +304,7 @@
                     @* Both of these take exactly what is still owed, which is the common case:
                        the whole balance on one method. Split tender is the exception, and is
                        built up with the fields above. *@
-                    <button class="btn btn--primary btn--block"
+                    <button class=@((!_ready || basketEmpty || !Tender.IsSettled) ? "btn btn--block" : "btn btn--primary btn--block")
                             @onclick="() => SettleWithAsync(TenderType.Cash)"
                             disabled="@(!_ready || basketEmpty || !Tender.IsSettled)">
                         Complete sale
