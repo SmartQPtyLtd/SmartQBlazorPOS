@@ -195,27 +195,12 @@ leaves the browser shim with almost nothing to get wrong.
 
 ## Building and testing
 
-The `dotnet` CLI needs its home redirected, because it otherwise tries to write
-`%USERPROFILE%\.dotnet`, which is not writable in this environment:
+Standard .NET 10 toolchain — no special setup:
 
 ```powershell
-$env:DOTNET_CLI_HOME = "D:\dsh-instances\POS\.dotnet-home"
 dotnet build .\Pos.slnx -c Release
 dotnet test  .\Pos.slnx -c Release
 ```
-
-### Environment notes
-
-Two restrictions in the current sandbox are worth knowing about, because both look like
-project failures but are not:
-
-1. **NuGet restore requires elevated access.** Outbound TLS is blocked, so a restore fails
-   with `SEC_E_NO_CREDENTIALS`. Once the package cache is primed, normal builds work
-   offline.
-2. **`dotnet test` requires elevated access.** The VSTest host calls `OpenProcess` on its
-   parent to register an exit callback, which the sandbox denies with
-   `Win32Exception (5): Access is denied`. Compilation succeeds regardless; only the test
-   *host* is affected.
 
 ---
 

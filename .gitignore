@@ -6,10 +6,6 @@ artifacts/
 ## Publish output, written by tools/verify-offline.ps1
 .publish/
 
-## Local tool state (dotnet CLI home is redirected here because the sandbox
-## cannot write the user profile directory)
-.dotnet-home/
-
 ## Runtime data — SQLite sync database, local logs
 *.db
 *.db-shm

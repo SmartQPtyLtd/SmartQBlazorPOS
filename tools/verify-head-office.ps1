@@ -15,7 +15,6 @@ $base = "http://127.0.0.1:$port"
 $token = 'verification-head-office-token-0000000001'
 $dbPath = Join-Path ([System.IO.Path]::GetTempPath()) "pos-verify-$(New-Guid).db"
 
-$env:DOTNET_CLI_HOME = Join-Path $repo '.dotnet-home'
 $env:HeadOffice__Token = $token
 $env:Sync__DatabasePath = $dbPath
 $env:ASPNETCORE_URLS = $base

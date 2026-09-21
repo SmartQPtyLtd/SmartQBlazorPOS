@@ -72,12 +72,6 @@ I checked these rather than assuming; they drive the design.
 
 Nearly all handheld scanners ship in **HID keyboard-emulation ("keyboard wedge")** mode, which types into a focused input and works in **every** browser with **zero APIs**. That is the universal baseline. `WebHID` is then an *enhancement* for Chromium only: software-triggered scanning, beeper/LED control, and — importantly — preventing scanner keystrokes from leaking into unrelated fields.
 
-### 3.4 Toolchain constraints on this machine (already handled)
-
-- `dotnet` CLI needs `DOTNET_CLI_HOME` redirected, as the sandbox blocks writes to `C:\Users\Jawid Hassim\.dotnet`.
-- Outbound TLS is blocked under `workspace-write`; **NuGet restore needs an escalation** (`SEC_E_NO_CREDENTIALS`). The package cache is now primed, so normal builds work offline.
-- `dotnet workload list` errors — a sandbox artifact. Plain Blazor WASM does **not** need `wasm-tools` (only AOT/relinking does). Confirmed by a successful build.
-
 ---
 
 ## 4. Architecture

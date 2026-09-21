@@ -33,8 +33,6 @@ $repo = Split-Path -Parent $PSScriptRoot
 $publishDir = Join-Path $repo '.publish/offline-check'
 $wwwroot = Join-Path $publishDir 'wwwroot'
 
-$env:DOTNET_CLI_HOME = Join-Path $repo '.dotnet-home'
-
 $step = 0
 function Show([string]$label, [string]$detail) {
     $script:step++
