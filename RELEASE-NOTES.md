@@ -1,8 +1,7 @@
 # Release Notes
 
 Detailed feature history, verification evidence, and the defects found along the way —
-moved out of [`README.md`](README.md) to keep it readable. For architecture and the
-phased delivery plan, see [`PLAN.md`](PLAN.md).
+moved out of [`README.md`](README.md) to keep it readable.
 
 ---
 
@@ -110,7 +109,7 @@ this system that is most carefully tested.
 - **Sync verified against a running host over HTTP**, not just against helpers: a replayed
   push returns `Duplicate` with an unchanged cursor and the sale appears exactly once in
   the pull. A reused enrolment code is rejected with `400`; a push with no credential is
-  rejected with `401`. Transcript in `PLAN.md`.
+  rejected with `401`.
 - **The multi-store loop verified against a running hub over HTTP**, reproducibly, by
   `tools/verify-head-office.ps1`: two stores provisioned and enrolled independently, the
   head-office boundary refusing both anonymous and device-credential callers, a refund and a void
@@ -122,7 +121,7 @@ this system that is most carefully tested.
   And **credential rotation end to end against the live hub**: a till rotates, the replacement works,
   the superseded secret keeps working inside its grace window, an identical retry is answered as the
   rotation it already applied, and a superseded refresh token used to mint different credentials is
-  refused **and revokes the device**. 40 steps, transcript in `PLAN.md`.
+  refused **and revokes the device**. 40 steps.
 - **UI verified rendering in headless Edge** over the DevTools protocol, for the till, the
   refunds screen, and the trading report; and since this round, **every screen** rendered in-process
   by the test suite, which is the check that actually runs on every build.

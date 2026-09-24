@@ -28,3 +28,5 @@ appsettings.*.local.json
 *.suo
 Thumbs.db
 .DS_Store
+
+PLAN.md

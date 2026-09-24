@@ -14,8 +14,7 @@ other browser.
 
 ![The SmartQ POS till — basket, tender keypad and live status bar](preview.jpeg)
 
-See [`PLAN.md`](PLAN.md) for the full architecture, browser-support findings, and phased
-delivery plan. See [`RELEASE-NOTES.md`](RELEASE-NOTES.md) for the detailed feature
+See [`RELEASE-NOTES.md`](RELEASE-NOTES.md) for the detailed feature
 history, verification evidence, and the defects found along the way.
 
 ---
@@ -146,10 +145,6 @@ warn: TerminalStartup[1000] Durable storage was not granted...
 info: TerminalStartup[1001] Seeded 8 demo products into an empty catalogue.
 info: TerminalPrinterProvider[1003] Printer resolved: Simulated printer (Ready).
 ```
-
-That run found two defects a clean build could not: an **ambiguous route** (the template's
-`Home.razor` also claimed `@page "/"`) and a **deadlocking synchronous wait** on async
-device resolution. Both are described in `PLAN.md`.
 
 ---
 
